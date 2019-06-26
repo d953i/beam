@@ -81,6 +81,7 @@ namespace proto {
 		virtual void get_Kdf(Key::IKdf::Ptr&) {}
 		virtual Block::SystemState::IHistory& get_History() = 0;
 		virtual void OnOwnedNode(const PeerID&, bool bUp) {}
+        virtual void OnNewPeer(const PeerID& id, io::Address address) {}
 
 		struct IBbsReceiver
 		{
@@ -209,6 +210,7 @@ namespace proto {
 				virtual void OnMsg(proto::ProofChainWork&& msg) override;
 				virtual void OnMsg(proto::BbsMsg&& msg) override;
 				virtual void OnMsg(proto::BbsMsgV0&& msg) override;
+                void OnMsg(proto::PeerInfo&& msg) override;
 #define THE_MACRO(type, msgOut, msgIn) \
 				virtual void OnMsg(proto::msgIn&&) override; \
 				bool IsSupported(Request##type&); \

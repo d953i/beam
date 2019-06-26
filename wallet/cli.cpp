@@ -1043,6 +1043,202 @@ namespace
 
         return boost::optional<LitecoinOptions>{};
     }
+
+    struct INodeConnectionObserver
+    {
+        virtual void OnNodeConnected(size_t iNodeIdx, bool) = 0;
+        virtual void OnConnectionFailed(size_t iNodeIdx, const proto::NodeConnection::DisconnectReason&) = 0;
+    };
+
+    class CountFlyClientNetwork : public proto::FlyClient::NetworkStd
+    {
+    public:
+        CountFlyClientNetwork(proto::FlyClient& fc, INodeConnectionObserver& connectionObserver) 
+            : proto::FlyClient::NetworkStd(fc)
+            , m_ConnectionObserver(connectionObserver)
+        {
+
+
+        }
+
+    private:
+        void OnNodeConnected(size_t iNodeIdx, bool connected) override 
+        {
+            m_ConnectionObserver.OnNodeConnected(iNodeIdx, connected);
+        }
+        
+        void OnConnectionFailed(size_t iNodeIdx, const proto::NodeConnection::DisconnectReason& dr)
+        {
+            m_ConnectionObserver.OnConnectionFailed(iNodeIdx, dr);
+        }
+    private:
+        INodeConnectionObserver& m_ConnectionObserver;
+    };
+
+
+    class CountWallet : public proto::FlyClient
+                      , public INodeConnectionObserver
+    {
+    public:
+        CountWallet() 
+            : m_CurrentID{Zero}
+        {
+            
+        }
+
+        void StartCount(io::Address address)
+        {
+            OnNewPeer(m_CurrentID, address);
+            StartScanning();
+            io::Reactor::get_Current().run();
+        }
+
+    private:
+        Block::SystemState::IHistory& get_History() override
+        {
+            return m_Headers;
+        }
+
+        void OnNewTip() override
+        {
+            ScanUnvisited(true);
+        }
+
+        void OnTipUnchanged() override
+        {
+            ScanUnvisited(true);
+        }
+
+        void ScanUnvisited(bool ok)
+        {
+            cout << (ok ? string("[Ok]") : string("[Failed]")) << endl;
+            m_Peers[m_CurrentID].m_IsAlive = ok;
+            m_UnvisitedPeers.erase(m_CurrentID);
+            m_VisitedPeers.insert(m_CurrentID);
+
+            if (m_UnvisitedPeers.empty())
+            {
+                size_t count = 0;
+                for (const auto& p : m_Peers)
+                {
+                    if (p.second.m_IsAlive)
+                    {
+                        ++count;
+                    }
+                }
+                cout << "\nScanning finished. " << count << " alive nodes found." << endl;
+                io::Reactor::get_Current().stop();
+                return;
+            }
+
+            if (ok && m_PeerCounter > 0)
+            {
+                return;
+            }
+
+            StartScanningAsync();
+        }
+
+        void StartScanning()
+        {
+            m_PeerCounter = 5;
+            const auto& peerID = *m_UnvisitedPeers.begin();
+            cout << "Scanning (" << m_VisitedPeers.size() << "/" << m_Peers.size() << ") " << peerID << endl;
+            m_CurrentID = peerID;
+            const auto& peer = m_Peers[peerID];
+
+            m_Nnet = make_shared<CountFlyClientNetwork>(*this, *this);
+            m_Nnet->m_Cfg.m_ReconnectTimeout_ms = 1000000; // to prevent reconnect
+            for (const auto& address : peer.m_Addresses)
+            {
+                m_Nnet->m_Cfg.m_vNodes.push_back(address);
+            }
+
+            m_Nnet->Connect();
+        }
+
+        void StartScanningAsync()
+        {
+            if (!m_Async)
+            {
+                m_Async = io::AsyncEvent::create(io::Reactor::get_Current(), [this]() {StartScanning(); });
+            }
+            m_Async->post();
+        }
+
+        void OnNewPeer(const PeerID& id, io::Address address) override 
+        {
+            cout << "New peer: " << id << endl;
+            auto it = m_Peers.find(id);
+            if (it == m_Peers.end())
+            {
+                auto p = m_Peers.emplace(id, PeerInfo());
+                p.first->second.m_Addresses.insert(address);
+            }
+            else
+            {
+                it->second.m_Addresses.insert(address);
+            }
+            if (m_VisitedPeers.find(id) == m_VisitedPeers.end())
+            {
+                m_UnvisitedPeers.insert(id);
+            }
+
+            if (--m_PeerCounter == 0)
+            {
+                auto it2 = m_VisitedPeers.find(m_CurrentID);
+                if (it2 != m_VisitedPeers.end())
+                {
+                    StartScanningAsync();
+                }
+            }
+        }
+
+        void OnNodeConnected(size_t iNodeIdx, bool connected) override
+        {
+            
+        }
+
+        void OnConnectionFailed(size_t iNodeIdx, const proto::NodeConnection::DisconnectReason& dr)
+        {
+            auto& peerInfo = m_Peers[m_CurrentID];
+            if (++peerInfo.m_DisconnectCount == peerInfo.m_Addresses.size())
+            {
+                ScanUnvisited(false);
+            }
+        }
+
+    private:
+        Block::SystemState::HistoryMap m_Headers;
+        shared_ptr<proto::FlyClient::NetworkStd> m_Nnet;
+        io::AsyncEvent::Ptr m_Async;
+
+        struct PeerInfo
+        {
+            std::set<io::Address> m_Addresses;
+            bool m_IsAlive = false;
+            size_t m_DisconnectCount = 0;
+        };
+
+        std::set<PeerID> m_VisitedPeers;
+        std::set<PeerID> m_UnvisitedPeers;
+        std::map<PeerID, PeerInfo> m_Peers;
+        PeerID m_CurrentID;
+        size_t m_PeerCounter = 5;
+        
+    };
+
+    int CountNodes(const po::variables_map& vm)
+    {
+        auto nodeAddress = GetNodeAddress(vm);
+        if (!nodeAddress)
+        {
+            return -1;
+        }
+        CountWallet wallet;
+        wallet.StartCount(*nodeAddress);
+        return 0;
+    }
 }
 
 io::Reactor::Ptr reactor;
@@ -1123,7 +1319,7 @@ int main_impl(int argc, char* argv[])
 
             Rules::get().UpdateChecksum();
 
-            {
+           {
                 reactor = io::Reactor::create();
                 io::Reactor::Scope scope(*reactor);
 
@@ -1165,7 +1361,8 @@ int main_impl(int argc, char* argv[])
                             cli::IMPORT_DATA,
                             cli::EXPORT_DATA,
                             cli::SWAP_INIT,
-                            cli::SWAP_LISTEN
+                            cli::SWAP_LISTEN,
+                            "count"
                         };
 
                         if (find(begin(commands), end(commands), command) == end(commands))
@@ -1190,6 +1387,11 @@ int main_impl(int argc, char* argv[])
                     {
                         LOG_ERROR() << "You can't restore cold wallet.";
                         return -1;
+                    }
+
+                    if (command == "count")
+                    {
+                        return CountNodes(vm);
                     }
 
                     assert(vm.count(cli::WALLET_STORAGE) > 0);
@@ -1353,7 +1555,7 @@ int main_impl(int argc, char* argv[])
                     bool isTxInitiator = command == cli::SEND;
                     if (isTxInitiator && !LoadBaseParamsForTX(vm, amount, fee, receiverWalletID, isFork1))
                     {
-                        return -1;
+                            return -1;
                     }
 
                     bool is_server = command == cli::LISTEN || vm.count(cli::LISTEN);
