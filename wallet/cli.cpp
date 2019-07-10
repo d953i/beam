@@ -1091,6 +1091,20 @@ namespace
             OnNewPeer(m_CurrentID, address);
             StartScanning();
             io::Reactor::get_Current().run();
+        } 
+
+        void Recount()
+        {
+            cout << "Recount" << endl;
+            m_VisitedPeers.clear();
+            for (auto& peer : m_Peers)
+            {
+                peer.second.m_DisconnectCount = 0;
+                peer.second.m_IsAlive = false;
+                m_UnvisitedPeers.insert(peer.first);
+            }
+            StartScanning();
+            io::Reactor::get_Current().run();
         }
 
     private:
@@ -1143,18 +1157,27 @@ namespace
         {
             m_PeerCounter = 5;
             const auto& peerID = *m_UnvisitedPeers.begin();
-            cout << "Scanning (" << m_VisitedPeers.size() << "/" << m_Peers.size() << ") " << peerID << endl;
-            m_CurrentID = peerID;
             const auto& peer = m_Peers[peerID];
+            cout << "Scanning " << peerID << " ip=" << *peer.m_Addresses.begin() << " (" << m_VisitedPeers.size() << "/" << m_Peers.size() << ") " << endl;
+            m_CurrentID = peerID;
 
             m_Nnet = make_shared<CountFlyClientNetwork>(*this, *this);
             m_Nnet->m_Cfg.m_ReconnectTimeout_ms = 1000000; // to prevent reconnect
             for (const auto& address : peer.m_Addresses)
             {
-                m_Nnet->m_Cfg.m_vNodes.push_back(address);
+                if (!address.empty())
+                {
+                    m_Nnet->m_Cfg.m_vNodes.push_back(address);
+                }
             }
-
-            m_Nnet->Connect();
+            if (!m_Nnet->m_Cfg.m_vNodes.empty())
+            {
+                m_Nnet->Connect();
+            }
+            else
+            {
+                ScanUnvisited(false);
+            }
         }
 
         void StartScanningAsync()
@@ -1168,7 +1191,7 @@ namespace
 
         void OnNewPeer(const PeerID& id, io::Address address) override 
         {
-            cout << "New peer: " << id << endl;
+            cout << "New peer: " << id << " address: " << address << endl;
             auto it = m_Peers.find(id);
             if (it == m_Peers.end())
             {
@@ -1237,6 +1260,10 @@ namespace
         }
         CountWallet wallet;
         wallet.StartCount(*nodeAddress);
+        while (true)
+        {
+            wallet.Recount();
+        }
         return 0;
     }
 }
