@@ -27,6 +27,7 @@
 #include "wallet/qtum/qtum_side.h"
 #include "wallet/swaps/common.h"
 #include "wallet/swaps/swap_transaction.h"
+#include "wallet/default_peers.h"
 #include "core/ecc_native.h"
 #include "core/serialization_adapters.h"
 #include "core/treasury.h"
@@ -1081,20 +1082,25 @@ namespace
     {
     public:
         CountWallet() 
-            : m_CurrentID{Zero}
         {
             
         }
 
-        void StartCount(io::Address address)
+        void StartCount(const std::vector<io::Address>& addresses)
         {
-            OnNewPeer(m_CurrentID, address);
+            PeerID id = 0UL;
+            for (const auto& address : addresses)
+            {
+                OnNewPeer(id, address);
+                id.Inc();
+            }
             StartScanning();
             io::Reactor::get_Current().run();
         } 
 
         void Recount()
         {
+            m_AliveCounter = 0;
             cout << "Recount" << endl;
             m_VisitedPeers.clear();
             for (auto& peer : m_Peers)
@@ -1126,9 +1132,11 @@ namespace
         void ScanUnvisited(bool ok)
         {
             cout << (ok ? string("[Ok]") : string("[Failed]")) << endl;
-            m_Peers[m_CurrentID].m_IsAlive = ok;
-            m_UnvisitedPeers.erase(m_CurrentID);
-            m_VisitedPeers.insert(m_CurrentID);
+            m_Peers[m_CurrentPeer].m_IsAlive = ok;
+            if (ok)
+                ++m_AliveCounter;
+            m_UnvisitedPeers.erase(m_CurrentPeer);
+            m_VisitedPeers.insert(m_CurrentPeer);
 
             if (m_UnvisitedPeers.empty())
             {
@@ -1156,20 +1164,14 @@ namespace
         void StartScanning()
         {
             m_PeerCounter = 5;
-            const auto& peerID = *m_UnvisitedPeers.begin();
-            const auto& peer = m_Peers[peerID];
-            cout << "Scanning " << peerID << " ip=" << *peer.m_Addresses.begin() << " (" << m_VisitedPeers.size() << "/" << m_Peers.size() << ") " << endl;
-            m_CurrentID = peerID;
+            const auto& peer = *m_UnvisitedPeers.begin();
+            const auto& peerInfo = m_Peers[peer];
+            cout << "Scanning " << " (" << m_AliveCounter << "/" << m_VisitedPeers.size() << "/" << m_Peers.size() << ") " << peerInfo.m_PeerID << " ip=" << peerInfo.m_Address << endl;
+            m_CurrentPeer = peer;
 
             m_Nnet = make_shared<CountFlyClientNetwork>(*this, *this);
             m_Nnet->m_Cfg.m_ReconnectTimeout_ms = 1000000; // to prevent reconnect
-            for (const auto& address : peer.m_Addresses)
-            {
-                if (!address.empty())
-                {
-                    m_Nnet->m_Cfg.m_vNodes.push_back(address);
-                }
-            }
+            m_Nnet->m_Cfg.m_vNodes.push_back(peerInfo.m_Address);
             if (!m_Nnet->m_Cfg.m_vNodes.empty())
             {
                 m_Nnet->Connect();
@@ -1192,24 +1194,28 @@ namespace
         void OnNewPeer(const PeerID& id, io::Address address) override 
         {
             cout << "New peer: " << id << " address: " << address << endl;
-            auto it = m_Peers.find(id);
-            if (it == m_Peers.end())
+            if (!address.empty())
             {
-                auto p = m_Peers.emplace(id, PeerInfo());
-                p.first->second.m_Addresses.insert(address);
-            }
-            else
-            {
-                it->second.m_Addresses.insert(address);
-            }
-            if (m_VisitedPeers.find(id) == m_VisitedPeers.end())
-            {
-                m_UnvisitedPeers.insert(id);
+                auto it = m_Peers.find(address);
+                if (it == m_Peers.end())
+                {
+                    auto p = m_Peers.emplace(address, PeerInfo());
+                    p.first->second.m_Address = address;
+                    p.first->second.m_PeerID = id;
+                }
+                else
+                {
+                    it->second.m_PeerID = id;
+                }
+                if (m_VisitedPeers.find(address) == m_VisitedPeers.end())
+                {
+                    m_UnvisitedPeers.insert(address);
+                }
             }
 
             if (--m_PeerCounter == 0)
             {
-                auto it2 = m_VisitedPeers.find(m_CurrentID);
+                auto it2 = m_VisitedPeers.find(m_CurrentPeer);
                 if (it2 != m_VisitedPeers.end())
                 {
                     StartScanningAsync();
@@ -1224,11 +1230,7 @@ namespace
 
         void OnConnectionFailed(size_t iNodeIdx, const proto::NodeConnection::DisconnectReason& dr)
         {
-            auto& peerInfo = m_Peers[m_CurrentID];
-            if (++peerInfo.m_DisconnectCount == peerInfo.m_Addresses.size())
-            {
-                ScanUnvisited(false);
-            }
+            ScanUnvisited(false);
         }
 
     private:
@@ -1238,28 +1240,49 @@ namespace
 
         struct PeerInfo
         {
-            std::set<io::Address> m_Addresses;
+            io::Address m_Address;
+            PeerID m_PeerID;
             bool m_IsAlive = false;
             size_t m_DisconnectCount = 0;
         };
 
-        std::set<PeerID> m_VisitedPeers;
-        std::set<PeerID> m_UnvisitedPeers;
-        std::map<PeerID, PeerInfo> m_Peers;
-        PeerID m_CurrentID;
+        std::set<io::Address> m_VisitedPeers;
+        std::set<io::Address> m_UnvisitedPeers;
+        std::map<io::Address, PeerInfo> m_Peers;
+        io::Address m_CurrentPeer;
         size_t m_PeerCounter = 5;
+        size_t m_AliveCounter = 0;
         
     };
 
     int CountNodes(const po::variables_map& vm)
     {
-        auto nodeAddress = GetNodeAddress(vm);
-        if (!nodeAddress)
-        {
-            return -1;
-        }
         CountWallet wallet;
-        wallet.StartCount(*nodeAddress);
+
+        vector<string> peers = { "eu-node01.mainnet.beam.mw:8100",
+"eu-node02.mainnet.beam.mw:8100",
+"eu-node03.mainnet.beam.mw:8100",
+"eu-node04.mainnet.beam.mw:8100",
+"us-node01.mainnet.beam.mw:8100",
+"us-node02.mainnet.beam.mw:8100",
+"us-node03.mainnet.beam.mw:8100",
+"us-node04.mainnet.beam.mw:8100",
+"ap-node01.mainnet.beam.mw:8100",
+"ap-node02.mainnet.beam.mw:8100",
+"ap-node03.mainnet.beam.mw:8100",
+"ap-node04.mainnet.beam.mw:8100" };// getDefaultPeers();
+        vector<io::Address> addresses;
+        for (const auto& peer : peers)
+        {
+            io::Address nodeAddress;
+            if (nodeAddress.resolve(peer.c_str()))
+            {
+                addresses.push_back(nodeAddress);
+            }
+        }
+        
+        //wallet.StartCount(*nodeAddress);
+        wallet.StartCount(addresses);
         while (true)
         {
             wallet.Recount();
