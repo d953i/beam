@@ -112,7 +112,7 @@ matrix:
         - sudo add-apt-repository ppa:beineri/opt-qt-5.11.2-bionic -y
         - sudo add-apt-repository ppa:mhier/libboost-latest -y
         - sudo apt-get update
-        - sudo apt-get install libboost1.70-dev qt511 qt511-meta-full qt511controls qt511declarative qt511svg qttools5-dev libgl1-mesa-dev libz-dev
+        - sudo apt-get install libboost1.70-dev qt511-meta qt511quickcontrols qt511quickcontrols2 qt511declarative qt511svg qt511tools libgl1-mesa-dev libz-dev
         - eval "CC=gcc-7 && CXX=g++-7"
         - export PATH=/opt/qt511/bin:$PATH
       env: 
