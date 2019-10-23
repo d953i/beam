@@ -28,6 +28,7 @@ T.TextField {
     verticalAlignment: TextInput.AlignVCenter
 
     property alias backgroundColor : backgroundRect.color
+    property alias underlineVisible : backgroundRect.visible
     backgroundColor: Style.content_main
 
 	selectByMouse: true
@@ -44,15 +45,17 @@ T.TextField {
         opacity: 0.5
         color: control.color
         verticalAlignment: control.verticalAlignment
-        visible: !control.length && !control.preeditText && (!control.activeFocus || control.horizontalAlignment !== Qt.AlignHCenter)
+        horizontalAlignment: control.horizontalAlignment
+        visible:  !control.activeFocus && !control.length && !control.preeditText
         elide: Text.ElideRight
+        wrapMode: control.wrapMode
     }
 
     background: Rectangle {
 	    id: backgroundRect
         y: control.height - height - control.bottomPadding + 4
         width: control.width - (control.leftPadding + control.rightPadding)
-        height: control.activeFocus || control.hovered ? 2 : 1
+        height: control.activeFocus || control.hovered ? 1 : 1
 		opacity: (control.activeFocus || control.hovered)? 0.3 : 0.1
     }
 

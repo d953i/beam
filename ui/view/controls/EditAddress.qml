@@ -43,7 +43,7 @@ Dialog {
 	}
 
 	property var getExpirationTimeLabel: function() {
-		var localeName = parentModel.getLocaleName();
+		var localeName = BeamGlobals.getLocaleName();
 		if (isExpiredAddress) {
 			return addressItem
 				? Utils.formatDateTime(addressItem.expirationDate, localeName)
@@ -83,7 +83,7 @@ Dialog {
 
     background: Rectangle {
 		radius: 10
-        color: Style.background_second
+        color: Style.background_popup
         anchors.fill: parent
     }
 
@@ -345,7 +345,7 @@ Dialog {
 			Item {
 				Layout.preferredHeight: 15
 				SFText {
-					//% "Address with same comment already exist"
+					//% "Address with the same comment already exists"
 					text: qsTrId("general-addr-comment-error")
 					color: Style.validator_error
 					font.pixelSize: 12
@@ -410,7 +410,8 @@ Dialog {
 					const expirationStatusEnum = {
 						Expired: 0,
 						OneDay: 1,
-						Never: 2
+						Never: 2,
+						AsIs: 3
 					}
 
 					if (rootControl.isExpiredAddress) {
@@ -445,9 +446,12 @@ Dialog {
 								case 2:
 									expirationStatus = expirationStatusEnum.Never;
 									break;
+								default:
+									expirationStatus = expirationStatusEnum.AsIs;
 							}
 						}
 					}
+					console.log(expirationStatus);
 					parentModel.saveChanges(addressID.text, addressName.text, expirationStatus);
 					rootControl.accepted();
                     rootControl.close();

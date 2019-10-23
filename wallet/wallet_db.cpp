@@ -22,6 +22,7 @@
 #include <boost/functional/hash.hpp>
 #include <boost/filesystem.hpp>
 #include "nlohmann/json.hpp"
+#include "utility/std_extension.h"
 
 #define NOSEP
 #define COMMA ", "
@@ -121,21 +122,6 @@ namespace std
         result_type operator()(const argument_type& a) const noexcept
         {
             return boost::hash<argument_type>()(a);
-        }
-    };
-
-    template<class T, size_t N> 
-    struct hash<std::array<T, N>>
-    {
-        auto operator() (const std::array<T, N>& key) const
-        {
-            std::hash<T> hasher;
-            size_t result = 0;
-            for(size_t i = 0; i < N; ++i)
-            {
-                result = (result << 1) ^ hasher(key[i]);
-            }
-            return result;
         }
     };
 }
@@ -676,12 +662,10 @@ namespace beam::wallet
                 return _commited;
             }
 
-            void rollback()
+            void rollback() noexcept
             {
                 int ret = sqlite3_exec(_db, "ROLLBACK;", nullptr, nullptr, nullptr);
-                throwIfError(ret, _db);
-
-                _rollbacked = true;
+                _rollbacked = (ret == SQLITE_OK);
             }
         private:
             sqlite3 * _db;
@@ -982,6 +966,17 @@ namespace beam::wallet
         }
     }
 
+    void WalletDB::createTables(sqlite3* db, sqlite3* privateDb)
+    {
+        CreateStorageTable(db);
+        CreateWalletMessageTable(db);
+        CreatePrivateVariablesTable(privateDb);
+        CreateVariablesTable(db);
+        CreateAddressesTable(db);
+        CreateTxParamsTable(db);
+        CreateStatesTable(db);
+    }
+
     IWalletDB::Ptr WalletDB::init(const string& path, const SecString& password, const ECC::NoLeak<ECC::uintBig>& secretKey, io::Reactor::Ptr reactor, bool separateDBForPrivateData)
     {
         if (!isInitialized(path))
@@ -1004,13 +999,7 @@ namespace beam::wallet
             enterKey(db, password);
             auto walletDB = make_shared<WalletDB>(db, secretKey, reactor, sdb);
 
-            CreateStorageTable(walletDB->_db);
-            CreateWalletMessageTable(walletDB->_db);
-            CreatePrivateVariablesTable(walletDB->m_PrivateDB);
-            CreateVariablesTable(walletDB->_db);
-            CreateAddressesTable(walletDB->_db);
-            CreateTxParamsTable(walletDB->_db);
-            CreateStatesTable(walletDB->_db);
+            createTables(walletDB->_db, walletDB->m_PrivateDB);
 
             {
                 // store master key
@@ -1043,7 +1032,47 @@ namespace beam::wallet
         return Ptr();
     }
 
-    IWalletDB::Ptr WalletDB::open(const string& path, const SecString& password, io::Reactor::Ptr reactor)
+#if defined(BEAM_HW_WALLET)
+    IWalletDB::Ptr WalletDB::initWithTrezor(const string& path, std::shared_ptr<ECC::HKdfPub> ownerKey, const SecString& password, io::Reactor::Ptr reactor)
+    {
+        if (!isInitialized(path))
+        {
+            sqlite3* db = nullptr;
+            {
+                int ret = sqlite3_open_v2(path.c_str(), &db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, nullptr);
+                throwIfError(ret, db);
+            }
+
+            enterKey(db, password);
+            auto walletDB = make_shared<WalletDB>(db, reactor);
+
+            createTables(walletDB->_db, walletDB->m_PrivateDB);
+
+            {
+                // store owner key (public)
+                {
+                    ECC::NoLeak<ECC::HKdfPub::Packed> packedOwnerKey;
+                    ownerKey->Export(packedOwnerKey.V);
+
+                    storage::setVar(*walletDB, OwnerKey, packedOwnerKey.V);
+                    walletDB->m_OwnerKdf = ownerKey;
+                }
+
+                storage::setVar(*walletDB, Version, DbVersion);
+            }
+
+            walletDB->flushDB();
+
+            return static_pointer_cast<IWalletDB>(walletDB);
+        }
+
+        LOG_ERROR() << path << " already exists.";
+
+        return Ptr();
+    }
+#endif
+
+    IWalletDB::Ptr WalletDB::open(const string& path, const SecString& password, io::Reactor::Ptr reactor, bool useTrezor)
     {
         try
         {
@@ -1287,6 +1316,7 @@ namespace beam::wallet
                     }
                 }
 
+                walletDB->m_useTrezor = useTrezor;
                 return static_pointer_cast<IWalletDB>(walletDB);
             }
 
@@ -1297,6 +1327,12 @@ namespace beam::wallet
         }
 
         return Ptr();
+    }
+
+    WalletDB::WalletDB(sqlite3* db, io::Reactor::Ptr reactor)
+        : WalletDB(db, reactor, db)
+    {
+
     }
 
     WalletDB::WalletDB(sqlite3* db, io::Reactor::Ptr reactor, sqlite3* sdb)
@@ -1343,7 +1379,7 @@ namespace beam::wallet
 
     Key::IKdf::Ptr WalletDB::get_MasterKdf() const
     {
-        return m_pKdf;
+        return m_useTrezor ? nullptr : m_pKdf;
     }
 
 	Key::IKdf::Ptr IWalletDB::get_ChildKdf(const Key::IDV& kidv) const
@@ -1765,6 +1801,15 @@ namespace beam::wallet
             stm.getBlobSafe(0, data, size);
     }
 
+    void WalletDB::removeVarRaw(const char* name)
+    {
+        const char* req = "DELETE FROM " VARIABLES_NAME " WHERE name=?1;";
+        sqlite::Statement stm(this, req);
+
+        stm.bind(1, name);
+        stm.step();
+    }
+
     void WalletDB::setPrivateVarRaw(const char* name, const void* data, size_t size)
     {
         const char* req = "INSERT or REPLACE INTO " PRIVATE_VARIABLES_NAME " (" VARIABLES_FIELDS ") VALUES(?1, ?2);";
@@ -1811,7 +1856,7 @@ namespace beam::wallet
     {
         storage::setVar(*this, SystemStateIDName, stateID);
         storage::setVar(*this, LastUpdateTimeName, getTimestamp());
-        notifySystemStateChanged();
+        notifySystemStateChanged(stateID);
     }
 
     bool WalletDB::getSystemStateID(Block::SystemState::ID& stateID) const
@@ -1917,17 +1962,18 @@ namespace beam::wallet
     boost::optional<TxDescription> WalletDB::getTx(const TxID& txId) const
     {
         // load only simple TX that supported by TxDescription
-        const char* req = "SELECT * FROM " TX_PARAMS_NAME " WHERE txID=?1 AND subTxID=?2;";
+        const char* req = "SELECT * FROM " TX_PARAMS_NAME " WHERE txID=?1;";
         sqlite::Statement stm(this, req);
         stm.bind(1, txId);
-        stm.bind(2, kDefaultSubTxID);
 
-        TxDescription txDescription;
-        txDescription.m_txId = txId;
+        TxDescription txDescription(txId);
 
-        const std::set<TxParameterID> mandatoryParams{ TxParameterID::Amount, TxParameterID::Fee,
-            TxParameterID::PeerID,
-            TxParameterID::MyID, TxParameterID::CreateTime,
+        const std::set<TxParameterID> mandatoryParams{ 
+            TxParameterID::Amount,
+            TxParameterID::Fee,
+         //   TxParameterID::PeerID,
+            TxParameterID::MyID, 
+            TxParameterID::CreateTime,
             TxParameterID::IsSender };
         std::set<TxParameterID> gottenParams;
 
@@ -1936,59 +1982,66 @@ namespace beam::wallet
             TxParameter parameter = {};
             int colIdx = 0;
             ENUM_TX_PARAMS_FIELDS(STM_GET_LIST, NOSEP, parameter);
+            auto parameterID = static_cast<TxParameterID>(parameter.m_paramID);
 
-            gottenParams.emplace(static_cast<TxParameterID>(parameter.m_paramID));
+            txDescription.SetParameter(parameterID, parameter.m_value, static_cast<SubTxID>(parameter.m_subTxID));
 
-            switch (static_cast<TxParameterID>(parameter.m_paramID))
+            if (parameter.m_subTxID == kDefaultSubTxID)
             {
-            case TxParameterID::TransactionType:
-                deserialize(txDescription.m_txType, parameter.m_value);
-                break;
-            case TxParameterID::Amount:
-                deserialize(txDescription.m_amount, parameter.m_value);
-                break;
-            case TxParameterID::Fee:
-                deserialize(txDescription.m_fee, parameter.m_value);
-                break;
-            case TxParameterID::MinHeight:
-                deserialize(txDescription.m_minHeight, parameter.m_value);
-                break;
-            case TxParameterID::PeerID:
-                deserialize(txDescription.m_peerId, parameter.m_value);
-                break;
-            case TxParameterID::MyID:
-                deserialize(txDescription.m_myId, parameter.m_value);
-                break;
-            case TxParameterID::CreateTime:
-                deserialize(txDescription.m_createTime, parameter.m_value);
-                break;
-            case TxParameterID::IsSender:
-                deserialize(txDescription.m_sender, parameter.m_value);
-                break;
-            case TxParameterID::Message:
-                deserialize(txDescription.m_message, parameter.m_value);
-                break;
-            case TxParameterID::Change:
-                deserialize(txDescription.m_change, parameter.m_value);
-                break;
-            case TxParameterID::ModifyTime:
-                deserialize(txDescription.m_modifyTime, parameter.m_value);
-                break;
-            case TxParameterID::Status:
-                deserialize(txDescription.m_status, parameter.m_value);
-                break;
-            case TxParameterID::KernelID:
-                deserialize(txDescription.m_kernelID, parameter.m_value);
-                break;
-            case TxParameterID::FailureReason:
-                deserialize(txDescription.m_failureReason, parameter.m_value);
-                break;
-            case TxParameterID::IsSelfTx:
-                deserialize(txDescription.m_selfTx, parameter.m_value);
-                break;
-            default:
-                break; // suppress warning
+                gottenParams.emplace(parameterID);
+
+                switch (parameterID)
+                {
+                case TxParameterID::TransactionType:
+                    deserialize(txDescription.m_txType, parameter.m_value);
+                    break;
+                case TxParameterID::Amount:
+                    deserialize(txDescription.m_amount, parameter.m_value);
+                    break;
+                case TxParameterID::Fee:
+                    deserialize(txDescription.m_fee, parameter.m_value);
+                    break;
+                case TxParameterID::MinHeight:
+                    deserialize(txDescription.m_minHeight, parameter.m_value);
+                    break;
+                case TxParameterID::PeerID:
+                    deserialize(txDescription.m_peerId, parameter.m_value);
+                    break;
+                case TxParameterID::MyID:
+                    deserialize(txDescription.m_myId, parameter.m_value);
+                    break;
+                case TxParameterID::CreateTime:
+                    deserialize(txDescription.m_createTime, parameter.m_value);
+                    break;
+                case TxParameterID::IsSender:
+                    deserialize(txDescription.m_sender, parameter.m_value);
+                    break;
+                case TxParameterID::Message:
+                    deserialize(txDescription.m_message, parameter.m_value);
+                    break;
+                case TxParameterID::Change:
+                    deserialize(txDescription.m_change, parameter.m_value);
+                    break;
+                case TxParameterID::ModifyTime:
+                    deserialize(txDescription.m_modifyTime, parameter.m_value);
+                    break;
+                case TxParameterID::Status:
+                    deserialize(txDescription.m_status, parameter.m_value);
+                    break;
+                case TxParameterID::KernelID:
+                    deserialize(txDescription.m_kernelID, parameter.m_value);
+                    break;
+                case TxParameterID::FailureReason:
+                    deserialize(txDescription.m_failureReason, parameter.m_value);
+                    break;
+                case TxParameterID::IsSelfTx:
+                    deserialize(txDescription.m_selfTx, parameter.m_value);
+                    break;
+                default:
+                    break; // suppress warning
+                }
             }
+
         }
 
         if (std::includes(gottenParams.begin(), gottenParams.end(), mandatoryParams.begin(), mandatoryParams.end()))
@@ -2164,14 +2217,14 @@ namespace beam::wallet
         m_AddressesCache.erase(id);
     }
 
-    void WalletDB::subscribe(IWalletDbObserver* observer)
+    void WalletDB::Subscribe(IWalletDbObserver* observer)
     {
         assert(std::find(m_subscribers.begin(), m_subscribers.end(), observer) == m_subscribers.end());
 
         m_subscribers.push_back(observer);
     }
 
-    void WalletDB::unsubscribe(IWalletDbObserver* observer)
+    void WalletDB::Unsubscribe(IWalletDbObserver* observer)
     {
         auto it = std::find(m_subscribers.begin(), m_subscribers.end(), observer);
 
@@ -2385,17 +2438,17 @@ namespace beam::wallet
         for (auto sub : m_subscribers) sub->onCoinsChanged();
     }
 
-    void WalletDB::notifyTransactionChanged(ChangeAction action, vector<TxDescription>&& items)
+    void WalletDB::notifyTransactionChanged(ChangeAction action, const vector<TxDescription>& items)
     {
         for (auto sub : m_subscribers)
         {
-            sub->onTransactionChanged(action, move(items));
+            sub->onTransactionChanged(action, items);
         }
     }
 
-    void WalletDB::notifySystemStateChanged()
+    void WalletDB::notifySystemStateChanged(const Block::SystemState::ID& stateID)
     {
-        for (auto sub : m_subscribers) sub->onSystemStateChanged();
+        for (auto sub : m_subscribers) sub->onSystemStateChanged(stateID);
     }
 
     void WalletDB::notifyAddressChanged(ChangeAction action, const vector<WalletAddress>& items)
@@ -2416,7 +2469,7 @@ namespace beam::wallet
         Block::SystemState::Full s;
         if (m_History.get_Tip(s))
         {
-            const Height hMaxBacklog = Rules::get().Macroblock.MaxRollback * 2; // can actually be more
+            const Height hMaxBacklog = Rules::get().MaxRollback * 2; // can actually be more
 
             if (s.m_Height > hMaxBacklog)
             {
@@ -2531,7 +2584,7 @@ namespace beam::wallet
 
     uint64_t WalletDB::saveIncomingWalletMessage(BbsChannel channel, const ByteBuffer& message)
     {
-        const char* req = "INSERT INTO " INCOMING_WALLET_MESSAGE_NAME " (Channel, Message) VALUES(?,?)";
+        const char* req = "INSERT INTO " INCOMING_WALLET_MESSAGE_NAME " (Channel, Message) VALUES(?,?);";
         sqlite::Statement stm(this, req);
         stm.bind(1, channel);
         stm.bind(2, message);
@@ -2551,8 +2604,8 @@ namespace beam::wallet
     bool WalletDB::History::Enum(IWalker& w, const Height* pBelow)
     {
         const char* req = pBelow ?
-            "SELECT " TblStates_Hdr " FROM " TblStates " WHERE " TblStates_Height "<? ORDER BY " TblStates_Height " DESC" :
-            "SELECT " TblStates_Hdr " FROM " TblStates " ORDER BY " TblStates_Height " DESC";
+            "SELECT " TblStates_Hdr " FROM " TblStates " WHERE " TblStates_Height "<? ORDER BY " TblStates_Height " DESC;" :
+            "SELECT " TblStates_Hdr " FROM " TblStates " ORDER BY " TblStates_Height " DESC;";
 
         sqlite::Statement stm(&get_ParentObj(), req);
 
@@ -2748,7 +2801,20 @@ namespace beam::wallet
                     Unspent += v;
                     break;
 
-                case Coin::Status::Incoming: Incoming += v; break;
+                case Coin::Status::Incoming:
+                {
+                    Incoming += v;
+                    if (c.m_ID.m_Type == Key::Type::Change)
+                    {
+                        ReceivingChange += v;
+                    }
+                    else
+                    {
+                        ReceivingIncoming += v;
+                    }
+
+                    break;
+                }
                 case Coin::Status::Outgoing: Outgoing += v; break;
                 case Coin::Status::Unavailable: Unavail += v; break;
 
@@ -2768,26 +2834,27 @@ namespace beam::wallet
             });
         }
 
-        WalletAddress createAddress(IWalletDB& walletDB)
+        WalletAddress createAddress(IWalletDB& walletDB, IPrivateKeyKeeper::Ptr keyKeeper)
         {
             WalletAddress newAddress;
             newAddress.m_createTime = beam::getTimestamp();
             newAddress.m_OwnID = walletDB.AllocateKidRange(1);
-            newAddress.m_walletID = generateWalletIDFromIndex(walletDB, newAddress.m_OwnID);
+            newAddress.m_walletID = generateWalletIDFromIndex(keyKeeper, newAddress.m_OwnID);
 
             return newAddress;
         }
 
-        WalletID generateWalletIDFromIndex(IWalletDB& walletDB, uint64_t ownID)
+        WalletID generateWalletIDFromIndex(IPrivateKeyKeeper::Ptr keyKeeper, uint64_t ownID)
         {
-            if (!walletDB.get_MasterKdf())
+            if (!keyKeeper->get_SbbsKdf())
             {
                 throw CannotGenerateSecretException();
             }
             WalletID walletID(Zero);
 
             ECC::Scalar::Native sk;
-            walletDB.get_MasterKdf()->DeriveKey(sk, Key::ID(ownID, Key::Type::Bbs));
+
+            keyKeeper->get_SbbsKdf()->DeriveKey(sk, Key::ID(ownID, Key::Type::Bbs));
 
             proto::Sk2Pk(walletID.m_Pk, sk);
 
@@ -2816,7 +2883,7 @@ namespace beam::wallet
             {
                 switch (txStatus)
                 {
-                case TxStatus::Cancelled:
+                case TxStatus::Canceled:
                 case TxStatus::Failed:
                 case TxStatus::Completed:
                     break;
@@ -2858,7 +2925,7 @@ namespace beam::wallet
             const string OwnAddressesName = "OwnAddresses";
             const string TransactionParametersName = "TransactionParameters";
 
-            bool ImportAddressesFromJson(IWalletDB& db, const json& obj)
+            bool ImportAddressesFromJson(IWalletDB& db, IPrivateKeyKeeper::Ptr keyKeeper, const json& obj)
             {
                 if (obj.find(OwnAddressesName) == obj.end())
                 {
@@ -2872,7 +2939,7 @@ namespace beam::wallet
                     if (address.m_walletID.FromHex(jsonAddress["WalletID"]))
                     {
                         address.m_OwnID = jsonAddress["Index"];
-                        if (address.m_walletID == generateWalletIDFromIndex(db, address.m_OwnID))
+                        if (address.m_walletID == generateWalletIDFromIndex(keyKeeper, address.m_OwnID))
                         {
                             //{ "SubIndex", 0 },
                             address.m_label = jsonAddress["Label"];
@@ -2890,7 +2957,7 @@ namespace beam::wallet
                 return true;
             }
 
-            bool ImportTransactionsFromJson(IWalletDB& db, const json& obj)
+            bool ImportTransactionsFromJson(IWalletDB& db, IPrivateKeyKeeper::Ptr keyKeeper, const json& obj)
             {
                 if (obj.find(TransactionParametersName) == obj.end())
                 {
@@ -2932,7 +2999,7 @@ namespace beam::wallet
                     }
 
                     auto waddr = db.getAddress(wid);
-                    if (waddr && (waddr->m_OwnID == 0 || wid != generateWalletIDFromIndex(db, waddr->m_OwnID)))
+                    if (waddr && (waddr->m_OwnID == 0 || wid != generateWalletIDFromIndex(keyKeeper, waddr->m_OwnID)))
                     {
                         LOG_ERROR() << "Transaction " << txPair.first << " was not imported. Invalid address parameter";
                         continue;
@@ -2940,7 +3007,7 @@ namespace beam::wallet
 
                     auto addressIt = paramsMap.find(TxParameterID::MyAddressID);
                     if (addressIt != paramsMap.end() && (!fromByteBuffer(addressIt->second.m_value, myAddrId) ||
-                        wid != generateWalletIDFromIndex(db, myAddrId)))
+                        wid != generateWalletIDFromIndex(keyKeeper, myAddrId)))
                     {
                         LOG_ERROR() << "Transaction " << txPair.first << " was not imported. Invalid MyAddressID parameter";
                         continue;
@@ -3016,12 +3083,12 @@ namespace beam::wallet
             return res.dump();
         }
 
-        bool ImportDataFromJson(IWalletDB& db, const char* data, size_t size)
+        bool ImportDataFromJson(IWalletDB& db, IPrivateKeyKeeper::Ptr keyKeeper, const char* data, size_t size)
         {
             try
             {
                 json obj = json::parse(data, data + size);
-                return ImportAddressesFromJson(db, obj) && ImportTransactionsFromJson(db, obj);
+                return ImportAddressesFromJson(db, keyKeeper, obj) && ImportTransactionsFromJson(db, keyKeeper, obj);
             }
             catch (const nlohmann::detail::exception& e)
             {

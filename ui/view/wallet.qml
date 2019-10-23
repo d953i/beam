@@ -6,10 +6,17 @@ import QtGraphicalEffects 1.0
 import QtQuick.Layouts 1.3
 import Beam.Wallet 1.0
 import "controls"
+import "utils.js" as Utils
 
 Item {
     id: root
     anchors.fill: parent
+
+    function onAccepted() { walletStackView.pop(); }
+    function onClosed() { walletStackView.pop(); }
+    function onSwapToken(token) {
+        tokenDuplicateChecker.checkTokenForDuplicate(token);
+    }
 
     WalletViewModel {
         id: viewModel
@@ -24,7 +31,7 @@ Item {
     }
 
     OpenExternalLinkConfirmation {
-        id: exchangesList
+        id: externalLinkConfirmation
     }   
 
     PaymentInfoDialog {
@@ -47,10 +54,33 @@ Item {
             BeamGlobals.copyToClipboard(text);
         }
     }
+
+    TokenDuplicateChecker {
+        id: tokenDuplicateChecker
+        Connections {
+            target: tokenDuplicateChecker.model
+            onTokenPreviousAccepted: function(token) {
+                tokenDuplicateChecker.isOwn = false;
+                tokenDuplicateChecker.open();
+            }
+            onTokenFirstTimeAccepted: function(token) {
+                walletStackView.pop();
+                walletStackView.push(Qt.createComponent("send_swap.qml"),
+                                     {
+                                         "onAccepted": onAccepted,
+                                         "onClosed": onClosed
+                                     });
+                walletStackView.currentItem.setToken(token);
+            }
+            onTokenOwnGenerated: function(token) {
+                tokenDuplicateChecker.isOwn = true;
+                tokenDuplicateChecker.open();
+            }
+        }
+    }
     
-    SFText {
-        font.pixelSize: 36
-        color: Style.content_main
+    Title {
+        x: 0
         //% "Wallet"
         text: qsTrId("wallet-title")
     }
@@ -61,117 +91,173 @@ Item {
     }
 
     Component {
-        id: wallet_layout
-        Item {            
+        id: walletLayout
+
+        ColumnLayout {
+            id: transactionsLayout
+            Layout.alignment: Qt.AlignTop
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            spacing: 0
+            state: "all"
             
-            Row{
-                anchors.top: parent.top
-                anchors.right: parent.right
-                spacing: 19
+            Row {
+                Layout.alignment: Qt.AlignTop | Qt.AlignRight
+                Layout.topMargin: 33
+                spacing: 20
 
                 CustomButton {
-                    palette.button: Style.accent_incoming
-                    palette.buttonText: Style.content_opposite
-                    icon.source: "qrc:/assets/icon-receive-blue.svg"
-                    //% "Receive"
-                    text: qsTrId("wallet-receive-button")
-
-                    onClicked: {
-                        walletView.push(Qt.createComponent("receive.qml"));
-                    }
-                }
-
-                CustomButton {
+                    id: sendButton
+                    height: 32
                     palette.button: Style.accent_outgoing
                     palette.buttonText: Style.content_opposite
                     icon.source: "qrc:/assets/icon-send-blue.svg"
                     //% "Send"
                     text: qsTrId("general-send")
+                    font.pixelSize: 12
+                    //font.capitalization: Font.AllUppercase
 
                     onClicked: {
-                        walletView.push(Qt.createComponent("send.qml"));
+                        walletStackView.push(Qt.createComponent("send.qml"),
+                                             {
+                                                 "isSwapMode": false,
+                                                 "onClosed": onClosed,
+                                                 "onSwapToken": onSwapToken,
+                                                 "onAddress": onAddress
+                                             });
+
+                        function onAddress(token) {
+                            walletStackView.pop();
+                            walletStackView.push(Qt.createComponent("send_regular.qml"),
+                                                {"onAccepted": onAccepted,
+                                                 "onClosed": onClosed,
+                                                 "onSwapToken": onSwapToken});
+                            walletStackView.currentItem.setToken(token);
+                        }
                     }
                 }
+
+                CustomButton {
+                    height: 32
+                    palette.button: Style.accent_incoming
+                    palette.buttonText: Style.content_opposite
+                    icon.source: "qrc:/assets/icon-receive-blue.svg"
+                    //% "Receive"
+                    text: qsTrId("wallet-receive-button")
+                    font.pixelSize: 12
+                    //font.capitalization: Font.AllUppercase
+
+                    onClicked: {
+                        walletStackView.push(Qt.createComponent("receive_regular.qml"),
+                                            {"onClosed": onClosed,
+                                             "onSwapMode": onSwapMode});
+                        function onSwapMode() {
+                            walletStackView.pop();
+                            walletStackView.push(Qt.createComponent("receive_swap.qml"),
+                                                {"onClosed": onClosed,
+                                                 "onRegularMode": onRegularMode});
+                        }
+                        function onRegularMode() {
+                            walletStackView.pop();
+                            walletStackView.push(Qt.createComponent("receive_regular.qml"),
+                                                {"onClosed": onClosed,
+                                                 "onSwapMode": onSwapMode});
+                        }
+                    }
+                }
+            }
+
+            AvailablePanel {
+                Layout.topMargin: 32
+                Layout.alignment: Qt.AlignTop | Qt.AlignLeft
+                Layout.maximumHeight: 67
+                Layout.minimumHeight: 67
+
+                width: parseFloat(viewModel.beamSending) > 0 || parseFloat(viewModel.beamReceiving) > 0 ? parent.width : (parent.width / 2)
+
+                available:         viewModel.beamAvailable
+                locked:            viewModel.beamLocked
+                lockedMaturing:    viewModel.beamLockedMaturing
+                sending:           viewModel.beamSending
+                receiving:         viewModel.beamReceiving
+                receivingChange:   viewModel.beamReceivingChange
+                receivingIncoming: viewModel.beamReceivingIncoming
             }
 
             Item {
-                y: 97
-                height: 206
-
-                anchors.left: parent.left
-                anchors.right: parent.right
-
-                RowLayout {
-
-                    id: wide_panels
-
-                    anchors.left: parent.left
-                    anchors.right: parent.right
-                    height: parent.height
-
-                    spacing: 30
-
-                    AvailablePanel {
-                        Layout.maximumWidth: 700
-                        Layout.minimumWidth: 350
-                        Layout.fillHeight: true
-                        Layout.fillWidth: true
-
-                        value: viewModel.available
-                        onCopyValueText: BeamGlobals.copyToClipboard(value)
-                        onOpenExternal : function() {
-                            var externalLink = "https://www.beam.mw/#exchanges";
-                            if (viewModel.isAllowedBeamMWLinks) {
-                                Qt.openUrlExternally(externalLink);
-                            } else {
-                                exchangesList.externalUrl = externalLink;
-                                exchangesList.onOkClicked = function () {
-                                    viewModel.isAllowedBeamMWLinks = true;
-                                };
-                                exchangesList.open();
-                            }
-                        }
-                    }
-
-                    SecondaryPanel {
-                        Layout.minimumWidth: 350
-                        Layout.fillHeight: true
-                        Layout.fillWidth: true
-
-                        //% "In progress"
-                        title: qsTrId("wallet-in-progress-title")
-                        receiving: viewModel.receiving
-                        sending: viewModel.sending
-                        maturing: viewModel.maturing
-
-                        onCopyValueText: BeamGlobals.copyToClipboard(value)
-                    }
-                }
-            }
-
-            Item
-            {
-                y: 320
-
-                anchors.left: parent.left
-                anchors.right: parent.right
+                Layout.topMargin: 45
+                Layout.alignment: Qt.AlignTop
+                Layout.fillWidth : true
 
                 SFText {
-                    x: 30
 
                     font {
-                        pixelSize: 18
+                        pixelSize: 14
+                        letterSpacing: 4
                         styleName: "Bold"; weight: Font.Bold
+                        capitalization: Font.AllUppercase
                     }
 
+                    opacity: 0.5
                     color: Style.content_main
 
                     //% "Transactions"
                     text: qsTrId("wallet-transactions-title")
                 }
+            }
+            
+            RowLayout {
+                Layout.alignment: Qt.AlignTop
+                Layout.fillWidth: true
+                Layout.topMargin: 30
+                Layout.preferredHeight: 32
+                Layout.bottomMargin: 10
 
+                TxFilter {
+                    id: allTabSelector
+                    Layout.alignment: Qt.AlignVCenter
+                    //% "All"
+                    label: qsTrId("wallet-transactions-all-tab")
+                    onClicked: transactionsLayout.state = "all"
+                    capitalization: Font.AllUppercase
+                }
+                TxFilter {
+                    id: inProgressTabSelector
+                    Layout.alignment: Qt.AlignVCenter
+                    //% "In progress"
+                    label: qsTrId("wallet-transactions-in-progress-tab")
+                    onClicked: transactionsLayout.state = "inProgress"
+                    capitalization: Font.AllUppercase
+                }
+                TxFilter {
+                    id: sentTabSelector
+                    Layout.alignment: Qt.AlignVCenter
+                    //% "Sent"
+                    label: qsTrId("wallet-transactions-sent-tab")
+                    onClicked: transactionsLayout.state = "sent"
+                    capitalization: Font.AllUppercase
+                }
+                TxFilter {
+                    id: receivedTabSelector
+                    Layout.alignment: Qt.AlignVCenter
+                    //% "Received"
+                    label: qsTrId("wallet-transactions-received-tab")
+                    onClicked: transactionsLayout.state = "received"
+                    capitalization: Font.AllUppercase
+                }
+                Item {
+                    Layout.alignment: Qt.AlignVCenter
+                    Layout.fillWidth: true
+                }
+                SearchBox {
+                    id: searchBox
+                    Layout.preferredWidth: 400
+                    Layout.alignment: Qt.AlignVCenter
+                    //% "Transaction or kernel ID, comment, address or contact"
+                    placeholderText: qsTrId("wallet-search-transactions-placeholder")
+                }
                 CustomToolButton {
-                    anchors.right: parent.right
+                    Layout.alignment: Qt.AlignVCenter | Qt.AlignRight
                     icon.source: "qrc:/assets/icon-proof.svg"
                     //% "Verify payment"
                     ToolTip.text: qsTrId("wallet-verify-payment")
@@ -181,367 +267,112 @@ Item {
                     }
                 }
             }
+            
+            states: [
+                State {
+                    name: "all"
+                    PropertyChanges { target: allTabSelector; state: "active" }
+                    PropertyChanges { target: txProxyModel; filterRole: "status" }
+                    PropertyChanges { target: txProxyModel; filterString: "*" }
+                },
+                State {
+                    name: "inProgress"
+                    PropertyChanges { target: inProgressTabSelector; state: "active" }
+                    PropertyChanges { target: txProxyModel; filterRole: "isInProgress" }
+                    PropertyChanges { target: txProxyModel; filterString: "true" }
+                },
+                State {
+                    name: "sent"
+                    PropertyChanges { target: sentTabSelector; state: "active" }
+                    PropertyChanges { target: txProxyModel; filterRole: "status" }
+                    PropertyChanges { target: txProxyModel; filterString: "sent" }
+                },
+                State {
+                    name: "received"
+                    PropertyChanges { target: receivedTabSelector; state: "active" }
+                    PropertyChanges { target: txProxyModel; filterRole: "status" }
+                    PropertyChanges { target: txProxyModel; filterString: "received" }
+                }
+            ]
 
             CustomTableView {
+                id: transactionsTable
 
-                id: transactionsView
-
-                anchors.fill: parent
-                anchors.topMargin: 394-33
+                Layout.alignment: Qt.AlignTop
+                Layout.fillWidth : true
+                Layout.fillHeight : true
                 Layout.bottomMargin: 9
 
-                property int rowHeight: 69
+                property int rowHeight: 56
 
-                frameVisible: false
+                property double resizableWidth: transactionsTable.width - actionsColumn.width
+                property double columnResizeRatio: resizableWidth / 810
+
                 selectionMode: SelectionMode.NoSelection
-                backgroundVisible: false
-
                 sortIndicatorVisible: true
-                sortIndicatorColumn: 1
+                sortIndicatorColumn: 0
                 sortIndicatorOrder: Qt.DescendingOrder
 
-                Binding{
-                    target: viewModel
-                    property: "sortRole"
-                    value: transactionsView.getColumn(transactionsView.sortIndicatorColumn).role
+                onSortIndicatorColumnChanged: {
+                    sortIndicatorOrder = sortIndicatorColumn != 0
+                        ? Qt.AscendingOrder
+                        : Qt.DescendingOrder;
                 }
 
-                Binding{
-                    target: viewModel
-                    property: "sortOrder"
-                    value: transactionsView.sortIndicatorOrder
+                model: SortFilterProxyModel {
+                    id: txProxyModel
+                    source: SortFilterProxyModel {
+                        
+                        source: viewModel.transactions
+                        filterRole: "search"
+                        filterString: "*" + searchBox.text + "*"
+                        filterSyntax: SortFilterProxyModel.Wildcard
+                        filterCaseSensitivity: Qt.CaseInsensitive
+                    }
+
+                    sortOrder: transactionsTable.sortIndicatorOrder
+                    sortCaseSensitivity: Qt.CaseInsensitive
+                    sortRole: transactionsTable.getColumn(transactionsTable.sortIndicatorColumn).role + "Sort"
+
+                    filterSyntax: SortFilterProxyModel.Wildcard
+                    filterCaseSensitivity: Qt.CaseInsensitive
                 }
 
-                property int resizableWidth: parent.width - iconColumn.width - actionsColumn.width
-
-                TableViewColumn {
-                    id: iconColumn
-                    width: 60
-                    elideMode: Text.ElideRight
-                    movable: false
-                    resizable: false
-                    delegate: Item {
-                        Item {
-                            width: parent.width
-                            height: transactionsView.rowHeight
-                            clip:true
-
-                            SvgImage {
-                                anchors.verticalCenter: parent.verticalCenter
-                                anchors.left: parent.left
-                                anchors.leftMargin: 26 
-                                source: "qrc:/assets/beam-circle.svg"
-                            }
-                        }
-                    }
-                }
-
-                TableViewColumn {
-                    role: viewModel.dateRole
-                    //% "Date | Time"
-                    title: qsTrId("wallet-txs-date-time")
-                    width: 160 * transactionsView.resizableWidth / 960
-                    elideMode: Text.ElideRight
-                    resizable: false
-                    movable: false
-                    delegate: Item {
-                        Item {
-                            width: parent.width
-                            height: transactionsView.rowHeight
-                            clip:true
-
-                            SFLabel {
-                                font.pixelSize: 14
-                                anchors.left: parent.left
-                                anchors.right: parent.right
-                                anchors.leftMargin: 20
-                                elide: Text.ElideRight
-                                anchors.verticalCenter: parent.verticalCenter
-                                text: styleData.value
-                                color: Style.content_main
-                                copyMenuEnabled: true
-                                onCopyText: BeamGlobals.copyToClipboard(text)
-                            }
-                        }
-                    }
-                }
-
-                TableViewColumn {
-                    role: viewModel.userRole
-                    //% "Address"
-                    title: qsTrId("general-address")
-                    width: 400 * transactionsView.resizableWidth / 960
-                    elideMode: Text.ElideMiddle
-                    resizable: false
-                    movable: false
-                    delegate: Item {
-                        Item {
-                            width: parent.width
-                            height: transactionsView.rowHeight
-                            clip:true
-
-                            SFLabel {
-                                font.pixelSize: 14
-                                anchors.left: parent.left
-                                anchors.right: parent.right
-                                anchors.leftMargin: 20
-                                elide: Text.ElideMiddle
-                                anchors.verticalCenter: parent.verticalCenter
-                                text: styleData.value
-                                color: Style.content_main
-                                copyMenuEnabled: true
-                                onCopyText: BeamGlobals.copyToClipboard(text)
-                            }
-                        }
-                    }
-                }
-
-                TableViewColumn {
-                    role: viewModel.amountRole
-                    //% "Amount"
-                    title: qsTrId("general-amount")
-                    width: 200 * transactionsView.resizableWidth / 960
-                    elideMode: Text.ElideRight
-                    movable: false
-                    resizable: false
-                    delegate: Item {
-                        Item {
-                            width: parent.width
-                            height: transactionsView.rowHeight
-                            property bool income: (styleData.row >= 0) ? viewModel.transactions[styleData.row].income : false
-                            SFLabel {
-                                anchors.leftMargin: 20
-                                anchors.right: parent.right
-                                anchors.left: parent.left
-                                color: parent.income ? Style.accent_incoming : Style.accent_outgoing
-                                elide: Text.ElideRight
-                                anchors.verticalCenter: parent.verticalCenter
-                                font.pixelSize: 24
-                                text: (parent.income ? "+ " : "- ") + styleData.value
-                                textFormat: Text.StyledText
-                                font.styleName: "Light"
-                                font.weight: Font.Thin
-                                copyMenuEnabled: true
-                                onCopyText: BeamGlobals.copyToClipboard(styleData.value)
-                            }
-                        }
-                    }
-                }
-
-                TableViewColumn {
-                    role: viewModel.statusRole
-                    //% "Status"
-                    title: qsTrId("general-status")
-                    width: 200 * transactionsView.resizableWidth / 960
-                    elideMode: Text.ElideRight
-                    movable: false
-                    resizable: false
-                    delegate: Item {
-                        Item {
-                            width: parent.width
-                            height: transactionsView.rowHeight
-                            clip:true
-
-                            RowLayout {
-                                anchors.fill: parent
-                                anchors.leftMargin: 10
-                                spacing: 14
-
-                                SvgImage {
-                                    Layout.alignment: Qt.AlignHCenter
-                                    sourceSize: Qt.size(20, 20)
-                                    source: getIconSource()
-
-                                    function getIconSource() {
-                                        if (!!viewModel.transactions[styleData.row]) {
-                                            if (viewModel.transactions[styleData.row].isSelfTx()) {
-                                                return "qrc:/assets/icon-transfer.svg";
-                                            }
-
-                                            return viewModel.transactions[styleData.row].income ? "qrc:/assets/icon-received.svg" : "qrc:/assets/icon-sent.svg";
-                                        }
-                                        return "qrc:/assets/icon-sent.svg";
-                                    }
-                                }
-
-                                SFLabel {
-                                    Layout.alignment: Qt.AlignHCenter
-                                    Layout.fillWidth: true
-                                    font.pixelSize: 14
-                                    font.italic: true
-                                    color: getTextColor()
-                                    elide: Text.ElideRight
-                                    text: txStatusText(styleData.value)
-                                    copyMenuEnabled: true
-                                    onCopyText: BeamGlobals.copyToClipboard(text)
-
-                                    function getTextColor () {
-                                        if (!viewModel.transactions[styleData.row]) {
-                                            return Style.content_main;
-                                        }
-
-                                        if (viewModel.transactions[styleData.row].inProgress() || viewModel.transactions[styleData.row].isCompleted()) {
-                                            if (viewModel.transactions[styleData.row].isSelfTx()) {
-                                                return Style.content_main;
-                                            }
-                                            return viewModel.transactions[styleData.row].income ? Style.accent_incoming : Style.accent_outgoing;
-                                        }
-
-                                        return Style.content_main;
-                                    }
-
-                                    function txStatusText(value) {
-                                        switch(value) {
-                                            //% "pending"
-                                            case "pending": return qsTrId("wallet-txs-status-pending");
-                                            //% "waiting for sender"
-                                            case "waiting for sender": return qsTrId("wallet-txs-status-waiting-sender");
-                                            //% "waiting for receiver"
-                                            case "waiting for receiver": return qsTrId("wallet-txs-status-waiting-receiver");
-                                            //% "receiving"
-                                            case "receiving": return qsTrId("general-receiving");
-                                            //% "sending"
-                                            case "sending": return qsTrId("general-sending");
-                                            //% "completed"
-                                            case "completed": return qsTrId("wallet-txs-status-completed");
-                                            //% "received"
-                                            case "received": return qsTrId("wallet-txs-status-received");
-                                            //% "sent"
-                                            case "sent": return qsTrId("wallet-txs-status-sent");
-                                            //% "cancelled"
-                                            case "cancelled": return qsTrId("wallet-txs-status-cancelled");
-                                            //% "expired"
-                                            case "expired": return qsTrId("wallet-txs-status-expired");
-                                            //% "failed"
-                                            case "failed": return qsTrId("wallet-txs-status-failed");
-                                            //% "unknown"
-                                            default: return qsTrId("wallet-txs-status-unknown");
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
-                TableViewColumn {
-                    id: actionsColumn
-                    role: "status"
-                    title: ""
-                    width: 40
-                    movable: false
-                    resizable: false
-                    delegate: txActions
-                }
-
-                model: viewModel.transactions
-
-                Component {
-                    id: txActions
-                    Item {
-                        Item {
-                            width: parent.width
-                            height: transactionsView.rowHeight
-
-                            Row{
-                                anchors.right: parent.right
-                                anchors.rightMargin: 12
-                                anchors.verticalCenter: parent.verticalCenter
-                                spacing: 10
-                                CustomToolButton {
-                                    icon.source: "qrc:/assets/icon-actions.svg"
-                                    //% "Actions"
-                                    ToolTip.text: qsTrId("general-actions")
-                                    onClicked: {
-                                        txContextMenu.transaction = viewModel.transactions[styleData.row];
-                                        txContextMenu.popup();
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
-                ContextMenu {
-                    id: txContextMenu
-                    modal: true
-                    dim: false
-                    property TxObject transaction
-                    Action {
-                        //% "Copy address"
-                        text: qsTrId("wallet-txs-copy-addr-cm")
-                        icon.source: "qrc:/assets/icon-copy.svg"
-                        onTriggered: {
-                            if (!!txContextMenu.transaction)
-                            {
-                                BeamGlobals.copyToClipboard(txContextMenu.transaction.user);
-                            }
-                        }
-                    }
-                    Action {
-                        //% "Cancel"
-                        text: qsTrId("general-cancel")
-                        onTriggered: {
-                           viewModel.cancelTx(txContextMenu.transaction);
-                        }
-                        enabled: !!txContextMenu.transaction && txContextMenu.transaction.canCancel
-                        icon.source: "qrc:/assets/icon-cancel.svg"
-                    }
-                    Action {
-                        //% "Delete"
-                        text: qsTrId("general-delete")
-                        icon.source: "qrc:/assets/icon-delete.svg"
-                        enabled: !!txContextMenu.transaction && txContextMenu.transaction.canDelete
-                        onTriggered: {
-                            //% "The transaction will be deleted. This operation can not be undone"
-                            deleteTransactionDialog.text = qsTrId("wallet-txs-delete-message");
-                            deleteTransactionDialog.open();
-                        }
-                    }
-                    Connections {
-                        target: deleteTransactionDialog
-                        onAccepted: {
-                            viewModel.deleteTx(txContextMenu.transaction);
-                        }
-                    }
-                }
-                // Transaction details
                 rowDelegate: Item {
-                    height: transactionsView.rowHeight
                     id: rowItem
+                    height: transactionsTable.rowHeight
+                    anchors.left: parent.left
+                    anchors.right: parent.right
                     property bool collapsed: true
 
-                    width: parent.width
-                    Rectangle {
-                            height: transactionsView.rowHeight
-                            width: parent.width
-                            color: Style.background_row_even
-                            visible: styleData.alternate
+                    property var myModel: parent.model
+
+                    onMyModelChanged: {
+                        collapsed = true;
+                        height = Qt.binding(function(){ return transactionsTable.rowHeight;});
                     }
 
-                    Column {
+                    Rectangle {
+                        anchors.fill: parent
+                        color: styleData.selected ? Style.row_selected :
+                                (styleData.alternate ? Style.background_row_even : Style.background_row_odd)
+                    }
+
+                    ColumnLayout {
                         id: rowColumn
                         width: parent.width
                         Rectangle {
-                            height: transactionsView.rowHeight
+                            height: 56
                             width: parent.width
                             color: "transparent"
                         }
                         Item {
                             id: txDetails
                             height: 0
-                            visible: height > 0
                             width: parent.width
                             clip: true
 
-                            property int maximumHeight: detailsPanel.height
-
-                            onMaximumHeightChanged: {
-                                if (!rowItem.collapsed) {
-                                    rowItem.height = maximumHeight + transactionsView.rowHeight
-                                    txDetails.height = maximumHeight
-                                }
-                            }
+                            property int maximumHeight: detailsPanel.implicitHeight
 
                             Rectangle {
                                 anchors.fill: parent
@@ -549,13 +380,51 @@ Item {
                             }
                             TransactionDetails {
                                 id: detailsPanel
-                                width: transactionsView.width
-                                model: !!viewModel.transactions[styleData.row] ? viewModel.transactions[styleData.row] : null
-                                onTextCopied: function (text) { BeamGlobals.copyToClipboard(text);}
-                                onShowDetails: {
-                                    if (model)
+                                width: transactionsTable.width
+
+                                property var txRolesMap: myModel
+                                sendAddress:        txRolesMap && txRolesMap.addressFrom ? txRolesMap.addressFrom : ""
+                                receiveAddress:     txRolesMap && txRolesMap.addressTo ? txRolesMap.addressTo : ""
+                                fee:                txRolesMap && txRolesMap.fee ? txRolesMap.fee : ""
+                                comment:            txRolesMap && txRolesMap.comment ? txRolesMap.comment : ""
+                                txID:               txRolesMap && txRolesMap.txID ? txRolesMap.txID : ""
+                                kernelID:           txRolesMap && txRolesMap.kernelID ? txRolesMap.kernelID : ""
+                                status:             txRolesMap && txRolesMap.status ? txRolesMap.status : ""
+                                failureReason:      txRolesMap && txRolesMap.failureReason ? txRolesMap.failureReason : ""
+                                isIncome:           txRolesMap && txRolesMap.isIncome ? txRolesMap.isIncome : false
+                                hasPaymentProof:    txRolesMap && txRolesMap.hasPaymentProof ? txRolesMap.hasPaymentProof : false
+                                isSelfTx:           txRolesMap && txRolesMap.isSelfTransaction ? txRolesMap.isSelfTransaction : false
+                                rawTxID:            txRolesMap && txRolesMap.rawTxID ? txRolesMap.rawTxID : null
+                                searchFilter:       searchBox.text
+                                hideFiltered:       false
+
+                                onOpenExternal : function() {
+                                    var url = Style.explorerUrl + "block?kernel_id=" + detailsPanel.kernelID;
+                                    Utils.openExternal(url, viewModel, externalLinkConfirmation);
+                                }
+                                onTextCopied: function (text) {
+                                    BeamGlobals.copyToClipboard(text);
+                                }
+                                onCopyPaymentProof: function() {
+                                    if (detailsPanel.rawTxID)
                                     {
-                                        paymentInfoDialog.model = model.getPaymentInfo();
+                                        var paymentInfo = viewModel.getPaymentInfo(detailsPanel.rawTxID);
+                                        if (paymentInfo.paymentProof.length === 0)
+                                        {
+                                            paymentInfo.paymentProofChanged.connect(function() {
+                                                textCopied(paymentInfo.paymentProof);
+                                            });
+                                        }
+                                        else
+                                        {
+                                            textCopied(paymentInfo.paymentProof);
+                                        }
+                                    }
+                                }
+                                onShowPaymentProof: {
+                                    if (detailsPanel.rawTxID)
+                                    {
+                                        paymentInfoDialog.model = viewModel.getPaymentInfo(detailsPanel.rawTxID);
                                         paymentInfoDialog.open();
                                     }
                                 }
@@ -566,23 +435,22 @@ Item {
                     MouseArea {
                         anchors.top: parent.top
                         anchors.left: parent.left
-                        height: transactionsView.rowHeight
+                        height: transactionsTable.rowHeight
                         width: parent.width
 
                         acceptedButtons: Qt.LeftButton | Qt.RightButton
                         onClicked: {
                             if (styleData.row === undefined 
-                             || styleData.row < 0
-                             || styleData.row >= viewModel.transactions.length)
+                            || styleData.row < 0
+                            || styleData.row >= txProxyModel.count)
                             {
                                 return;
                             }
                             if (mouse.button === Qt.RightButton )
                             {
-                                txContextMenu.transaction = viewModel.transactions[styleData.row];
-                                txContextMenu.popup();
+                                transactionsTable.showContextMenu(styleData.row);
                             }
-                            else if (mouse.button === Qt.LeftButton && !!viewModel.transactions[styleData.row])
+                            else if (mouse.button === Qt.LeftButton)
                             {
                                 if (parent.collapsed)
                                 {
@@ -607,7 +475,7 @@ Item {
                             target: rowItem
                             easing.type: Easing.Linear
                             property: "height"
-                            to: transactionsView.rowHeight + txDetails.maximumHeight
+                            to: transactionsTable.rowHeight + txDetails.maximumHeight
                             duration: expand.expandDuration
                         }
 
@@ -630,7 +498,7 @@ Item {
                             target: rowItem
                             easing.type: Easing.Linear
                             property: "height"
-                            to: transactionsView.rowHeight
+                            to: transactionsTable.rowHeight
                             duration: collapse.collapseDuration
                         }
 
@@ -647,21 +515,238 @@ Item {
                 itemDelegate: Item {
                     Item {
                         width: parent.width
-                        height: transactionsView.rowHeight
+                        height: transactionsTable.rowHeight
+
                         TableItem {
                             text: styleData.value
                             elide: styleData.elideMode
+                            onCopyText: BeamGlobals.copyToClipboard(styleData.value)
                         }
                     }
+                }
+
+                TableViewColumn {
+                    role: "timeCreated"
+                    //% "Created on"
+                    title: qsTrId("wallet-txs-date-time")
+                    elideMode: Text.ElideRight
+                    width: 120 * transactionsTable.columnResizeRatio
+                    movable: false
+                    resizable: false
+                }
+                TableViewColumn {
+                    role: "addressFrom"
+                    //% "From"
+                    title: qsTrId("general-address-from")
+                    elideMode: Text.ElideMiddle
+                    width: 200 * transactionsTable.columnResizeRatio
+                    movable: false
+                    resizable: false
+                }
+                TableViewColumn {
+                    role: "addressTo"
+                    //% "To"
+                    title: qsTrId("general-address-to")
+                    elideMode: Text.ElideMiddle
+                    width: 200 * transactionsTable.columnResizeRatio
+                    movable: false
+                    resizable: false
+                }
+                TableViewColumn {
+                    role: "amountGeneral"
+                    //% "Amount"
+                    title: qsTrId("general-amount")
+                    elideMode: Text.ElideRight
+                    width: 130 * transactionsTable.columnResizeRatio
+                    movable: false
+                    resizable: false
+                    delegate: Item {
+                        Item {
+                            width: parent.width
+                            height: transactionsTable.rowHeight
+                            property var isIncome: !!styleData.value && transactionsTable.model.getRoleValue(styleData.row, "isIncome")
+                            TableItem {
+                                text: (parent.isIncome ? "+ " : "- ") + styleData.value
+                                fontWeight: Font.Bold
+                                fontStyleName: "Bold"
+                                fontSizeMode: Text.Fit
+                                color: parent.isIncome ? Style.accent_incoming : Style.accent_outgoing
+                                onCopyText: BeamGlobals.copyToClipboard(Utils.getAmountWithoutCurrency(styleData.value)) 
+                            }
+                        }
+                    }
+                }
+                TableViewColumn {
+                    id: statusColumn
+                    role: "status"
+                    //% "Status"
+                    title: qsTrId("general-status")
+                    width: transactionsTable.getAdjustedColumnWidth(statusColumn)//150 * transactionsTable.columnResizeRatio
+                    movable: false
+                    resizable: false
+                    delegate: Item {
+                        Item {
+                            width: parent.width
+                            height: transactionsTable.rowHeight
+
+                            RowLayout {
+                                id: statusRow
+                                Layout.alignment: Qt.AlignLeft
+                                anchors.fill: parent
+                                anchors.leftMargin: 10
+                                spacing: 10
+
+                                property var isInProgress: transactionsTable.model.getRoleValue(styleData.row, "isInProgress")
+                                property var isSelfTransaction: transactionsTable.model.getRoleValue(styleData.row, "isSelfTransaction")
+                                property var isIncome: transactionsTable.model.getRoleValue(styleData.row, "isIncome")
+                                property var isCompleted: transactionsTable.model.getRoleValue(styleData.row, "isCompleted")
+                                property var isExpired: transactionsTable.model.getRoleValue(styleData.row, "isExpired")
+
+                                SvgImage {
+                                    id: statusIcon;
+                                    Layout.alignment: Qt.AlignLeft
+                                    
+                                    sourceSize: Qt.size(20, 20)
+                                    source: getIconSource()
+                                    function getIconSource() {
+                                        if (statusRow.isInProgress) {
+                                            if (statusRow.isSelfTransaction) {
+                                                return "qrc:/assets/icon-sending-own.svg";
+                                            }
+                                            return statusRow.isIncome ? "qrc:/assets/icon-receiving.svg"
+                                                                 : "qrc:/assets/icon-sending.svg";
+                                        }
+                                        else if (statusRow.isCompleted) {
+                                            if (statusRow.isSelfTransaction) {
+                                                return "qrc:/assets/icon-sent-own.svg";
+                                            }
+                                            return statusRow.isIncome ? "qrc:/assets/icon-received.svg"
+                                                                 : "qrc:/assets/icon-sent.svg";
+                                        }
+                                        else if (statusRow.isExpired) {
+                                            return "qrc:/assets/icon-failed.svg" 
+                                        }
+                                        else {
+                                            return statusRow.isIncome ? "qrc:/assets/icon-receive-canceled.svg"
+                                                                 : "qrc:/assets/icon-send-canceled.svg";
+                                        }
+                                    }
+                                }
+                                SFLabel {
+                                    Layout.alignment: Qt.AlignLeft
+                                    Layout.fillWidth: true
+                                    font.pixelSize: 14
+                                    font.italic: true
+                                    wrapMode: Text.WordWrap
+                                    text: getStatusText(styleData.value)
+                                    verticalAlignment: Text.AlignBottom
+                                    color: getTextColor()
+                                    function getTextColor () {
+                                        if (statusRow.isInProgress || statusRow.isCompleted) {
+                                            if (statusRow.isSelfTransaction) {
+                                                return Style.content_main;
+                                            }
+                                            return statusRow.isIncome ? Style.accent_incoming : Style.accent_outgoing;
+                                        }
+                                        else {
+                                            return Style.content_secondary;
+                                        }
+                                    }
+                                    onTextChanged: {
+                                        color = getTextColor();
+                                        statusIcon.source = statusIcon.getIconSource();
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                TableViewColumn {
+                    id: actionsColumn
+                    elideMode: Text.ElideRight
+                    width: 40
+                    movable: false
+                    resizable: false
+                    delegate: txActions
+                }
+
+                function showContextMenu(row) {
+                    txContextMenu.cancelEnabled = transactionsTable.model.getRoleValue(row, "isCancelAvailable");
+                    txContextMenu.deleteEnabled = transactionsTable.model.getRoleValue(row, "isDeleteAvailable");
+                    txContextMenu.txID = transactionsTable.model.getRoleValue(row, "rawTxID");
+                    txContextMenu.popup();
+                }
+
+                Component {
+                    id: txActions
+                    Item {
+                        Item {
+                            width: parent.width
+                            height: transactionsTable.rowHeight
+                            CustomToolButton {
+                                anchors.verticalCenter: parent.verticalCenter
+                                anchors.right: parent.right
+                                anchors.rightMargin: 12
+                                icon.source: "qrc:/assets/icon-actions.svg"
+                                //% "Actions"
+                                ToolTip.text: qsTrId("general-actions")
+                                onClicked: {
+                                    transactionsTable.showContextMenu(styleData.row);
+                                }
+                            }
+                        }
+                    }
+                }
+
+                ContextMenu {
+                    id: txContextMenu
+                    modal: true
+                    dim: false
+                    property bool cancelEnabled
+                    property bool deleteEnabled
+                    property var txID
+
+                    Action {
+                        //% "Cancel"
+                        text: qsTrId("general-cancel")
+                        icon.source: "qrc:/assets/icon-cancel.svg"
+                        enabled: txContextMenu.cancelEnabled
+                        onTriggered: {
+                            viewModel.cancelTx(txContextMenu.txID);
+                        }
+                    }
+                    Action {
+                        //% "Delete"
+                        text: qsTrId("general-delete")
+                        icon.source: "qrc:/assets/icon-delete.svg"
+                        enabled: txContextMenu.deleteEnabled
+                        onTriggered: {
+                            //% "The transaction will be deleted. This operation can not be undone"
+                            deleteTransactionDialog.text = qsTrId("wallet-txs-delete-message");
+                            deleteTransactionDialog.open();
+                        }
+                    }
+                    Connections {
+                        target: deleteTransactionDialog
+                        onAccepted: {
+                            viewModel.deleteTx(txContextMenu.txID);
+                        }
+                    }
+                }
+
+                ConfirmationDialog {
+                    id: deleteTransactionDialog
+                    //% "Delete"
+                    okButtonText: qsTrId("general-delete")
                 }
             }
         }
     }
 
     StackView {
-        id: walletView
+        id: walletStackView
         anchors.fill: parent
-        initialItem: wallet_layout
+        initialItem: walletLayout
 
         pushEnter: Transition {
             enabled: false
@@ -678,15 +763,46 @@ Item {
 
         onCurrentItemChanged: {
             if (currentItem && currentItem.defaultFocusItem) {
-                walletView.currentItem.defaultFocusItem.forceActiveFocus();
+                walletStackView.currentItem.defaultFocusItem.forceActiveFocus();
             }
         }
     }
 
     Component.onCompleted: {
         if (root.toSend) {
-            walletView.push(Qt.createComponent("send.qml"));
+            sendButton.clicked();
             root.toSend = false;
         }
-    }    
+    }
+
+    function getStatusText(value) {
+        switch(value) {
+            //% "pending"
+            case "pending": return qsTrId("wallet-txs-status-pending");
+            //% "waiting for sender"
+            case "waiting for sender": return qsTrId("wallet-txs-status-waiting-sender");
+            //% "waiting for receiver"
+            case "waiting for receiver": return qsTrId("wallet-txs-status-waiting-receiver");
+            //% "in progress"
+            case "receiving": return qsTrId("wallet-txs-status-in-progress");
+            //% "in progress"
+            case "sending": return qsTrId("wallet-txs-status-in-progress");
+            //% "sent to own address"
+            case "completed": return qsTrId("wallet-txs-status-own-sent");
+            //% "sending to own address"
+            case "self sending": return qsTrId("wallet-txs-status-own-sending");
+            //% "received"
+            case "received": return qsTrId("wallet-txs-status-received");
+            //% "sent"
+            case "sent": return qsTrId("wallet-txs-status-sent");
+            //% "cancelled"
+            case "cancelled": return qsTrId("wallet-txs-status-cancelled");
+            //% "expired"
+            case "expired": return qsTrId("wallet-txs-status-expired");
+            //% "failed"
+            case "failed": return qsTrId("wallet-txs-status-failed");
+            //% "unknown"
+            default: return qsTrId("wallet-txs-status-unknown");
+        }
+    }
 }

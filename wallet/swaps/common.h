@@ -14,11 +14,14 @@
 
 #pragma once
 
-#include "../common.h"
+#include "wallet/common.h"
 
 namespace beam::wallet
 {
-    constexpr uint32_t kBeamLockTimeInBlocks = 24 * 60;
+    // TODO: remove after tests
+    constexpr uint32_t kBeamLockTimeInBlocks = 60;
+    // TODO: uncomment after tests
+    /*constexpr uint32_t kBeamLockTimeInBlocks = 24 * 60;*/
     constexpr Amount kMinFeeInGroth = 100;
 
     enum SubTxIndex : SubTxID
@@ -38,4 +41,6 @@ namespace beam::wallet
         SigningTx,
         Constructed
     };
+
+    uint64_t UnitsPerCoin(AtomicSwapCoin swapCoin) noexcept;
 }

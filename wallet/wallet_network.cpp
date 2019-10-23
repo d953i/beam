@@ -34,10 +34,11 @@ namespace beam::wallet {
 
     ///////////////////////////
 
-    BaseMessageEndpoint::BaseMessageEndpoint(IWallet& w, const IWalletDB::Ptr& pWalletDB)
+    BaseMessageEndpoint::BaseMessageEndpoint(IWalletMessageConsumer& w, const IWalletDB::Ptr& pWalletDB, IPrivateKeyKeeper::Ptr keyKeeper)
         : m_Wallet(w)
         , m_WalletDB(pWalletDB)
         , m_AddressExpirationTimer(io::Timer::create(io::Reactor::get_Current()))
+        , m_keyKeeper(keyKeeper)
     {
 
     }
@@ -76,7 +77,7 @@ namespace beam::wallet {
                 break; // as well
 
 
-            if (!m_WalletDB->get_MasterKdf())
+            if (!m_keyKeeper->get_SbbsKdf())
             {
                 // public wallet
                 m_WalletDB->saveIncomingWalletMessage(channel, msg);
@@ -109,7 +110,7 @@ namespace beam::wallet {
                 WalletID wid;
                 wid.m_Pk = it->get_ParentObj().m_Pk;
                 wid.m_Channel = it->m_Value;
-                m_Wallet.OnWalletMessage(wid, std::move(msgWallet));
+                m_Wallet.OnWalletMessage(wid, msgWallet);
                 break;
             }
         }
@@ -129,9 +130,9 @@ namespace beam::wallet {
             pAddr->m_ExpirationTime = address.getExpirationTime();
             pAddr->m_Wid.m_OwnID = address.m_OwnID;
 
-            if (m_WalletDB->get_MasterKdf())
+            if (m_keyKeeper->get_SbbsKdf())
             {
-                m_WalletDB->get_MasterKdf()->DeriveKey(pAddr->m_sk, Key::ID(address.m_OwnID, Key::Type::Bbs));
+                m_keyKeeper->get_SbbsKdf()->DeriveKey(pAddr->m_sk, Key::ID(address.m_OwnID, Key::Type::Bbs));
 
                 proto::Sk2Pk(pAddr->m_Pk, pAddr->m_sk); // needed to "normalize" the sk, and calculate the channel
             }
@@ -204,7 +205,7 @@ namespace beam::wallet {
         ECC::GenRandom(hvRandom.V);
 
         ECC::Scalar::Native nonce;
-        m_WalletDB->get_MasterKdf()->DeriveKey(nonce, hvRandom.V);
+        m_keyKeeper->get_SbbsKdf()->DeriveKey(nonce, hvRandom.V);
 
         ByteBuffer encryptedMessage;
         if (proto::Bbs::Encrypt(encryptedMessage, peerID.m_Pk, nonce, sb.first, static_cast<uint32_t>(sb.second)))
@@ -214,6 +215,48 @@ namespace beam::wallet {
         else
         {
             LOG_WARNING() << "BBS serialization failed (bad peerID?)";
+        }
+    }
+
+    /**
+     * Sign message with private key and send it without encryption
+     *
+     * @param msg       Message data
+     * @param channel   BBS channel to send message
+     * @param wid       Public key used in signature creation
+     */
+    void BaseMessageEndpoint::SendAndSign(const ByteBuffer& msg, const BbsChannel& channel, const WalletID& wid, uint8_t version)
+    {
+        SwapOfferConfirmation confirmation;
+
+        auto waddr = m_WalletDB->getAddress(wid);
+
+        if (waddr && waddr->m_OwnID)
+        {
+            ECC::Scalar::Native sk;
+            
+            m_keyKeeper->get_SbbsKdf()->DeriveKey(sk, ECC::Key::ID(waddr->m_OwnID, Key::Type::Bbs));
+            PeerID generatedPk;
+            proto::Sk2Pk(generatedPk, sk);
+
+            confirmation.m_offerData = msg;
+            confirmation.Sign(sk);
+
+            ByteBuffer signature = toByteBuffer(confirmation.m_Signature);
+
+            size_t bodySize = msg.size() + signature.size();
+            assert(bodySize <= UINT32_MAX);
+            MsgHeader header(0, 0, version, 0, static_cast<uint32_t>(bodySize));
+
+            ByteBuffer finalMessage(header.SIZE);
+            header.write(finalMessage.data());
+            finalMessage.reserve(header.size + header.SIZE);
+            std::copy(std::begin(msg), std::end(msg), std::back_inserter(finalMessage));
+            std::copy(std::begin(signature), std::end(signature), std::back_inserter(finalMessage));
+            
+            WalletID dummyWId;
+            dummyWId.m_Channel = channel;
+            SendEncryptedMessage(dummyWId, finalMessage);
         }
     }
 
@@ -236,8 +279,8 @@ namespace beam::wallet {
 
     ///////////////////////////
 
-    WalletNetworkViaBbs::WalletNetworkViaBbs(IWallet& w, shared_ptr<proto::FlyClient::INetwork> net, const IWalletDB::Ptr& pWalletDB)
-        : BaseMessageEndpoint(w, pWalletDB)
+    WalletNetworkViaBbs::WalletNetworkViaBbs(IWalletMessageConsumer& w, shared_ptr<proto::FlyClient::INetwork> net, const IWalletDB::Ptr& pWalletDB, IPrivateKeyKeeper::Ptr keyKeeper)
+        : BaseMessageEndpoint(w, pWalletDB, keyKeeper)
         , m_NodeEndpoint(net)
 		, m_WalletDB(pWalletDB)
 	{
@@ -252,27 +295,29 @@ namespace beam::wallet {
 		}
 
         Subscribe();
-        m_WalletDB->subscribe(this);
+        m_WalletDB->Subscribe(this);
 	}
 
 	WalletNetworkViaBbs::~WalletNetworkViaBbs()
 	{
-        m_WalletDB->unsubscribe(this);
-		m_Miner.Stop();
+        try 
+        {
+            m_WalletDB->Unsubscribe(this);
+		    m_Miner.Stop();
 
-		while (!m_PendingBbsMsgs.empty())
-			DeleteReq(m_PendingBbsMsgs.front());
+		    while (!m_PendingBbsMsgs.empty())
+			    DeleteReq(m_PendingBbsMsgs.front());
 
-        Unsubscribe();
-
-		try {
+            Unsubscribe();
+		
 			SaveBbsTimestamps();
 		} 
         catch (const std::exception& e)
         {
             LOG_UNHANDLED_EXCEPTION() << "what = " << e.what();
         }
-        catch (...) {
+        catch (...)
+        {
             LOG_UNHANDLED_EXCEPTION();
 		}
 	}
@@ -555,8 +600,8 @@ namespace beam::wallet {
 	}
 
     /////////////////////////////////
-    ColdWalletMessageEndpoint::ColdWalletMessageEndpoint(IWallet& wallet, IWalletDB::Ptr walletDB)
-        : BaseMessageEndpoint(wallet, walletDB)
+    ColdWalletMessageEndpoint::ColdWalletMessageEndpoint(IWalletMessageConsumer& wallet, IWalletDB::Ptr walletDB, IPrivateKeyKeeper::Ptr keyKeeper)
+        : BaseMessageEndpoint(wallet, walletDB, keyKeeper)
         , m_WalletDB(walletDB)
     {
         Subscribe();

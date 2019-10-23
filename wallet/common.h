@@ -36,6 +36,9 @@ namespace beam::wallet
     const Height kDefaultTxLifetime = 2 * 60;
     const Height kDefaultTxResponseTime = 12 * 60;
 
+    using SubTxID = uint16_t;
+    const SubTxID kDefaultSubTxID = 1;
+
 #pragma pack (push, 1)
     struct WalletID
     {
@@ -85,15 +88,25 @@ namespace beam::wallet
     {
         Pending,
         InProgress,
-        Cancelled,
+        Canceled,
         Completed,
         Failed,
         Registering
     };
 
+    enum class SwapOfferStatus : uint32_t
+    {
+        Pending,
+        InProgress,
+        Completed,
+        Canceled,
+        Expired,
+        Failed
+    };
+
 #define BEAM_TX_FAILURE_REASON_MAP(MACRO) \
     MACRO(Unknown,                      0, "Unknown reason") \
-    MACRO(Cancelled,                    1, "Transaction was cancelled") \
+    MACRO(Canceled,                    1, "Transaction was cancelled") \
     MACRO(InvalidPeerSignature,         2, "Peer's signature is not valid ") \
     MACRO(FailedToRegister,             3, "Failed to register transaction") \
     MACRO(InvalidTransaction,           4, "Transaction is not valid") \
@@ -124,78 +137,6 @@ namespace beam::wallet
 #undef MACRO
     };
 
-    // Specifies key transaction parameters for interaction with Wallet Clients
-    struct TxDescription
-    {
-        TxDescription() = default;
-
-        TxDescription(const TxID& txId
-                    , wallet::TxType txType
-                    , Amount amount
-                    , Amount fee
-                    , Height minHeight
-                    , const WalletID& peerId
-                    , const WalletID& myId
-                    , ByteBuffer&& message
-                    , Timestamp createTime
-                    , bool sender)
-            : m_txId{ txId }
-            , m_txType{ txType }
-            , m_amount{ amount }
-            , m_fee{ fee }
-            , m_change{}
-            , m_minHeight{ minHeight }
-            , m_peerId{ peerId }
-            , m_myId{myId}
-            , m_message{ std::move(message) }
-            , m_createTime{ createTime }
-            , m_modifyTime{ createTime }
-            , m_sender{ sender }
-            , m_status{ TxStatus::Pending }
-        {
-
-        }
-
-        TxID m_txId;
-        wallet::TxType m_txType = wallet::TxType::Simple;
-        Amount m_amount=0;
-        Amount m_fee=0;
-        Amount m_change=0;
-        Height m_minHeight=0;
-        WalletID m_peerId = Zero;
-        WalletID m_myId = Zero;
-        ByteBuffer m_message;
-        Timestamp m_createTime=0;
-        Timestamp m_modifyTime=0;
-        bool m_sender=false;
-        bool m_selfTx = false;
-        TxStatus m_status=TxStatus::Pending;
-        Merkle::Hash m_kernelID = Zero;
-        TxFailureReason m_failureReason = TxFailureReason::Unknown;
-
-        bool canResume() const
-        {
-            return m_status == TxStatus::Pending 
-                || m_status == TxStatus::InProgress 
-                || m_status == TxStatus::Registering;
-        }
-
-        bool canCancel() const
-        {
-            return m_status == TxStatus::InProgress
-                || m_status == TxStatus::Pending;
-        }
-
-        bool canDelete() const
-        {
-            return m_status == TxStatus::Failed
-                || m_status == TxStatus::Completed
-                || m_status == TxStatus::Cancelled;
-        }
-
-        std::string getStatusString() const;
-    };
-
     template<typename T>
     bool fromByteBuffer(const ByteBuffer& b, T& value)
     {
@@ -214,7 +155,7 @@ namespace beam::wallet
     ByteBuffer toByteBuffer(const T& value)
     {
         Serializer s;
-        s& value;
+        s & value;
         ByteBuffer b;
         s.swap_buf(b);
         return b;
@@ -229,7 +170,7 @@ namespace beam::wallet
     enum class TxParameterID : uint8_t
     {
         // public parameters
-        // Can bet set during outside communications
+        // Can be set during outside communications
         TransactionType = 0,
         IsSender = 1,
         Amount = 2,
@@ -249,12 +190,12 @@ namespace beam::wallet
         PeerProtoVersion = 16,
         MaxHeight = 17,
 
+        PeerResponseTime = 24,
         SubTxIndex = 25,
         PeerPublicSharedBlindingFactor = 26,
 
         IsSelfTx = 27,
-       
-        AtomicSwapSecondSideChainType = 29,
+
         AtomicSwapIsBeamSide = 30,
         AtomicSwapCoin = 31,
         AtomicSwapAmount = 32,
@@ -320,19 +261,127 @@ namespace beam::wallet
 
         Inputs = 180,
         InputCoins = 183,
-        OutputCoins = 184,           
+        OutputCoins = 184,
         Outputs = 190,
 
         Kernel = 200,
         PreImage = 201,
         AtomicSwapSecretPrivateKey = 202,
         AtomicSwapSecretPublicKey = 203,
+        Confirmations = 204,
 
         InternalFailureReason = 210,
     
         State = 255
 
     };
+
+    using PackedTxParameters = std::vector<std::pair<TxParameterID, ByteBuffer>>;
+
+    // Holds transaction parameters as key/value
+    class TxParameters
+    {
+    public:
+        TxParameters(const boost::optional<TxID>& txID = {});
+
+        bool operator==(const TxParameters& other);
+        bool operator!=(const TxParameters& other);
+
+        boost::optional<TxID> GetTxID() const;
+
+        template <typename T>
+        boost::optional<T> GetParameter(TxParameterID parameterID, SubTxID subTxID = kDefaultSubTxID) const
+        {
+            static_assert(std::is_same<T, ByteBuffer>::value == false);
+            auto buffer = GetParameter(parameterID, subTxID);
+            if (buffer && !buffer->empty())
+            {
+                Deserializer d;
+                d.reset(buffer->data(), buffer->size());
+                T value;
+                d & value;
+                return value;
+            }
+            return boost::optional<T>();
+        }
+
+        template <typename T>
+        bool GetParameter(TxParameterID parameterID, T& value, SubTxID subTxID = kDefaultSubTxID) const
+        {
+            auto subTxIt = m_Parameters.find(subTxID);
+            if (subTxIt == m_Parameters.end())
+            {
+                return false;
+            }
+            auto pit = subTxIt->second.find(parameterID);
+            if (pit == subTxIt->second.end())
+            {
+                return false;
+            }
+            const ByteBuffer& b = pit->second;
+
+            if (!b.empty())
+            {
+                Deserializer d;
+                d.reset(b.data(), b.size());
+                d& value;
+            }
+            else
+            {
+                ZeroObject(value);
+            }
+            return true;
+        }
+
+        template <typename T>
+        TxParameters& SetParameter(TxParameterID parameterID, const T& value, SubTxID subTxID = kDefaultSubTxID)
+        {
+            static_assert(std::is_same<T, ByteBuffer>::value == false);
+            return SetParameter(parameterID, toByteBuffer(value), subTxID);
+        }
+
+        bool DeleteParameter(TxParameterID parameterID, SubTxID subTxID = kDefaultSubTxID)
+        {
+            auto subTxIt = m_Parameters.find(subTxID);
+            if (subTxIt == m_Parameters.end())
+            {
+                return false;
+            }
+            auto pit = subTxIt->second.find(parameterID);
+            if (pit == subTxIt->second.end())
+            {
+                return false;
+            }
+            
+            subTxIt->second.erase(pit);
+
+            return true;
+        }
+
+        PackedTxParameters Pack() const;
+
+        boost::optional<ByteBuffer> GetParameter(TxParameterID parameterID, SubTxID subTxID = kDefaultSubTxID) const;
+        TxParameters& SetParameter(TxParameterID parameterID, const ByteBuffer& parameter, SubTxID subTxID = kDefaultSubTxID);
+
+    private:
+        boost::optional<TxID> m_ID;
+        std::map<SubTxID, std::map<TxParameterID, ByteBuffer>> m_Parameters;
+    };
+
+    // Class to simplify serializing/deserializing parameters
+    class TxToken
+    {
+    public:
+        static const uint8_t TokenFlag = 0x80;
+        TxToken() = default;
+        TxToken(const TxParameters&);
+        TxParameters UnpackParameters() const;
+        SERIALIZE(m_Flags, m_TxID, m_Parameters);
+    private:
+        uint8_t m_Flags = TokenFlag;
+        boost::optional<TxID> m_TxID;
+        PackedTxParameters m_Parameters;
+    };    
 
     enum class AtomicSwapCoin
     {
@@ -344,17 +393,111 @@ namespace beam::wallet
 
     AtomicSwapCoin from_string(const std::string& value);
 
-    enum class SwapSecondSideChainType
+    struct SwapOffer : public TxParameters
     {
-        Mainnet,
-        Testnet,
-        Unknown
+        SwapOffer() = default;
+        SwapOffer(const boost::optional<TxID>& txID)
+            : TxParameters(txID) {};
+        SwapOffer(const TxID& txId, SwapOfferStatus status, WalletID publisherId, AtomicSwapCoin coin)
+            : TxParameters(txId),
+              m_txId(txId),
+              m_status(status),
+              m_publisherId(publisherId),
+              m_coin(coin) {};
+
+        /**
+         * Used to set m_Parameters on default constructed SwapOffer
+         */
+        void SetTxParameters(const PackedTxParameters&);
+
+        TxID m_txId = {};
+        SwapOfferStatus m_status = SwapOfferStatus::Pending;
+        WalletID m_publisherId = {};
+        AtomicSwapCoin m_coin = AtomicSwapCoin::Unknown;
     };
 
-    SwapSecondSideChainType SwapSecondSideChainTypeFromString(const std::string& value);
+    class SwapOfferToken
+    {
+    public:
+        SwapOfferToken() = default;
+        SwapOfferToken(const SwapOffer& offer)
+            : m_TxID(offer.m_txId),
+              m_status(offer.m_status),
+              m_publisherId(offer.m_publisherId),
+              m_coin(offer.m_coin),
+              m_Parameters(offer.Pack()) {};
+        
+        SwapOffer Unpack() const;
+        SERIALIZE(m_TxID, m_status, m_publisherId, m_coin, m_Parameters);
+    private:
+        boost::optional<TxID> m_TxID;
+        boost::optional<SwapOfferStatus> m_status;
+        boost::optional<WalletID> m_publisherId;
+        boost::optional<AtomicSwapCoin> m_coin;
+        PackedTxParameters m_Parameters;
+    };
 
-    using SubTxID = uint16_t;
-    const SubTxID kDefaultSubTxID = 1;
+    boost::optional<TxParameters> ParseParameters(const std::string& text);
+
+    // Specifies key transaction parameters for interaction with Wallet Clients
+    struct TxDescription : public TxParameters
+    {
+        TxDescription() = default;
+
+        TxDescription(const TxID& txId
+            , TxType txType = TxType::Simple
+            , Amount amount = 0
+            , Amount fee =0
+            , Height minHeight = 0
+            , const WalletID & peerId = Zero
+            , const WalletID& myId = Zero
+            , ByteBuffer&& message = {}
+            , Timestamp createTime = {}
+            , bool sender = true)
+            : TxParameters(txId)
+            , m_txId{ txId }
+            , m_txType{ txType }
+            , m_amount{ amount }
+            , m_fee{ fee }
+            , m_change{}
+            , m_minHeight{ minHeight }
+            , m_peerId{ peerId }
+            , m_myId{ myId }
+            , m_message{ std::move(message) }
+            , m_createTime{ createTime }
+            , m_modifyTime{ createTime }
+            , m_sender{ sender }
+            , m_selfTx{ false }
+            , m_status{ TxStatus::Pending }
+            , m_kernelID{ Zero }
+            , m_failureReason{ TxFailureReason::Unknown }
+        {
+
+        }
+
+        bool canResume() const;
+        bool canCancel() const;
+        bool canDelete() const;
+        std::string getStatusString() const;
+
+    //private:
+        TxID m_txId = {};
+        wallet::TxType m_txType = wallet::TxType::Simple;
+        Amount m_amount = 0;
+        Amount m_fee = 0;
+        Amount m_change = 0;
+        Height m_minHeight = 0;
+        WalletID m_peerId = Zero;
+        WalletID m_myId = Zero;
+        ByteBuffer m_message;
+        Timestamp m_createTime = 0;
+        Timestamp m_modifyTime = 0;
+        bool m_sender = false;
+        bool m_selfTx = false;
+        TxStatus m_status = TxStatus::Pending;
+        Merkle::Hash m_kernelID = Zero;
+        TxFailureReason m_failureReason = TxFailureReason::Unknown;
+    };
 
     // messages
     struct SetTxParameter
@@ -364,8 +507,9 @@ namespace beam::wallet
 
         TxType m_Type;
 
-        std::vector<std::pair<TxParameterID, ByteBuffer>> m_Parameters;
-
+        PackedTxParameters m_Parameters;
+        
+        // TODO use TxParameters here
         template <typename T>
         SetTxParameter& AddParameter(TxParameterID paramID, T&& value)
         {
@@ -433,7 +577,6 @@ namespace beam::wallet
         virtual bool get_tip(Block::SystemState::Full& state) const = 0;
         virtual void send_tx_params(const WalletID& peerID, SetTxParameter&&) = 0;
         virtual void UpdateOnNextTip(const TxID&) = 0;
-        virtual SecondSide::Ptr GetSecondSide(const TxID&) const = 0;
     };
 
     enum class ErrorType : uint8_t
@@ -454,18 +597,32 @@ namespace beam::wallet
     ErrorType getWalletError(proto::NodeProcessingException::Type exceptionType);
     ErrorType getWalletError(io::ErrorCode errorCode);
 
-    struct PaymentConfirmation
+    struct ConfirmationBase
+    {
+        ECC::Signature m_Signature;
+        
+        virtual void get_Hash(ECC::Hash::Value&) const = 0;
+
+        bool IsValid(const PeerID&) const;
+        void Sign(const ECC::Scalar::Native& sk);
+    };
+
+    struct PaymentConfirmation : public ConfirmationBase
     {
         // I, the undersigned, being healthy in mind and body, hereby accept they payment specified below, that shall be delivered by the following kernel ID.
         Amount m_Value;
         ECC::Hash::Value m_KernelID;
         PeerID m_Sender;
-        ECC::Signature m_Signature;
 
-        void get_Hash(ECC::Hash::Value&) const;
-        bool IsValid(const PeerID&) const;
+        void get_Hash(ECC::Hash::Value&) const override;
+    };
+    
+    struct SwapOfferConfirmation : public ConfirmationBase
+    {
+        // Identifies owner for swap offer modification
+        ByteBuffer m_offerData;
 
-        void Sign(const ECC::Scalar::Native& sk);
+        void get_Hash(ECC::Hash::Value&) const override;
     };
 }
 
@@ -480,4 +637,7 @@ namespace std
     string to_string(const beam::wallet::WalletID&);
     string to_string(const beam::Merkle::Hash& hash);
     string to_string(beam::wallet::AtomicSwapCoin value);
+    string to_string(beam::wallet::SwapOfferStatus status);
+    string to_string(const beam::wallet::PrintableAmount& amount);
+    string to_string(const beam::wallet::TxParameters&);
 }
