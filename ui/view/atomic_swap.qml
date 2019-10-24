@@ -64,6 +64,9 @@ Item {
 
     TokenDuplicateChecker {
         id: tokenDuplicateChecker
+        onAccepted: {
+            offersStackView.pop();
+        }
         Connections {
             target: tokenDuplicateChecker.model
             onTokenPreviousAccepted: function(token) {
@@ -191,21 +194,10 @@ Item {
                     }
                     gradLeft: Style.swapCurrencyPaneGrLeftBEAM
                     currencyIcon: "qrc:/assets/icon-beam.svg"
-                    valueStr: [viewModel.beamAvailable, Utils.symbolBeam].join(" ")
+                    amount: viewModel.beamAvailable
+                    currencySymbol: Utils.symbolBeam
                     valueSecondaryStr: activeTxCountStr()
                     visible: true
-                }
-
-                function btcAmount() {
-                    return viewModel.hasBtcTx ? "" : viewModel.btcAvailable + " " + Utils.symbolBtc;
-                }
-
-                function ltcAmount() {
-                    return viewModel.hasLtcTx ? "" : viewModel.ltcAvailable + " " + Utils.symbolLtc;
-                }
-
-                function qtumAmount() {
-                    return viewModel.hasQtumTx ? "" : viewModel.qtumAvailable + " " + Utils.symbolQtum;
                 }
 
                 //% "Transaction is in progress"
@@ -226,7 +218,8 @@ Item {
                 SwapCurrencyAmountPane {
                     gradLeft: Style.swapCurrencyPaneGrLeftBTC
                     currencyIcon: "qrc:/assets/icon-btc.svg"
-                    valueStr: parent.btcAmount()
+                    amount: viewModel.hasBtcTx ? "" : viewModel.btcAvailable
+                    currencySymbol: Utils.symbolBtc
                     valueSecondaryStr: parent.btcActiveTxStr()
                     isOk: viewModel.btcOK
                     isConnecting: viewModel.btcConnecting
@@ -240,7 +233,8 @@ Item {
                 SwapCurrencyAmountPane {
                     gradLeft: Style.swapCurrencyPaneGrLeftLTC
                     currencyIcon: "qrc:/assets/icon-ltc.svg"
-                    valueStr: parent.ltcAmount()
+                    amount: viewModel.hasLtcTx ? "" : viewModel.ltcAvailable
+                    currencySymbol: Utils.symbolLtc
                     valueSecondaryStr: parent.ltcActiveTxStr()
                     isOk: viewModel.ltcOK
                     isConnecting: viewModel.ltcConnecting
@@ -252,7 +246,8 @@ Item {
                 SwapCurrencyAmountPane {
                     gradLeft: Style.swapCurrencyPaneGrLeftQTUM
                     currencyIcon: "qrc:/assets/icon-qtum.svg"
-                    valueStr: parent.qtumAmount()
+                    amount: viewModel.hasQtumTx ? "" : viewModel.qtumAvailable
+                    currencySymbol: Utils.symbolQtum
                     valueSecondaryStr: parent.qtumActiveTxStr()
                     isOk: viewModel.qtumOK
                     isConnecting: viewModel.qtumConnecting
@@ -266,7 +261,7 @@ Item {
                     gradLeft: Style.swapCurrencyPaneGrLeftOther
                     gradRight: Style.swapCurrencyPaneGrLeftOther
                     //% "Connect other currency wallet to start trading"
-                    valueStr: qsTrId("atomic-swap-connect-other")
+                    amount: qsTrId("atomic-swap-connect-other")
                     textSize: 14
                     rectOpacity: 1.0
                     textColor: Style.active
@@ -1069,10 +1064,6 @@ Item {
                                         anchors.leftMargin: 10
                                         spacing: 10
 
-                                        property var isInProgress: transactionsTable.model.getRoleValue(styleData.row, "isInProgress")
-                                        property var isCompleted: transactionsTable.model.getRoleValue(styleData.row, "isCompleted")
-                                        property var isExpired: transactionsTable.model.getRoleValue(styleData.row, "isExpired")
-
                                         SvgImage {
                                             id: statusIcon
                                             Layout.alignment: Qt.AlignLeft
@@ -1080,11 +1071,13 @@ Item {
                                             sourceSize: Qt.size(20, 20)
                                             source: getIconSource()
                                             function getIconSource() {
-                                                if (statusRow.isInProgress)
+                                                if (!model)
+                                                    return "";
+                                                if (model.isInProgress)
                                                     return "qrc:/assets/icon-swap-in-progress.svg";
-                                                else if (statusRow.isCompleted)
+                                                else if (model.isCompleted)
                                                     return "qrc:/assets/icon-swap-completed.svg";
-                                                else if (statusRow.isExpired)
+                                                else if (model.isExpired)
                                                     return "qrc:/assets/icon-failed.svg";
                                                 else
                                                     return "qrc:/assets/icon-swap-failed.svg";
@@ -1100,16 +1093,14 @@ Item {
                                             verticalAlignment: Text.AlignBottom
                                             color: getTextColor()
                                             function getTextColor () {
-                                                if (statusRow.isInProgress || statusRow.isCompleted) {
+                                                if (!model) 
+                                                    return Style.content_secondary;
+                                                if (model.isInProgress || model.isCompleted) {
                                                      return Style.accent_swap;
                                                 }
                                                 else {
                                                     return Style.content_secondary;
                                                 }
-                                            }
-                                            onTextChanged: {
-                                                color = getTextColor();
-                                                statusIcon.source = statusIcon.getIconSource();
                                             }
                                         }
                                     }
