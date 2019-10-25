@@ -60,6 +60,14 @@ Item {
         onAccepted: {
             viewModel.cancelOffer(cancelOfferDialog.txId);
         }
+        Connections {
+            target: viewModel
+            onOfferRemovedFromTable: function(txId) {
+                if (cancelOfferDialog.txId == txId) {
+                    cancelOfferDialog.cancelButton.onClicked();
+                }
+            }
+        }
     }
 
     TokenDuplicateChecker {
@@ -593,7 +601,6 @@ Item {
                             resizable: false
                             delegate: TableItem {
                                 text: styleData.value
-                                elide: Text.ElideRight
                                 fontWeight: Font.Bold
                                 fontStyleName: "Bold"
                                 fontSizeMode: Text.Fit
@@ -609,7 +616,6 @@ Item {
                             resizable: false
                             delegate: TableItem {
                                 text: styleData.value
-                                elide: Text.ElideRight
                                 fontWeight: Font.Bold
                                 fontStyleName: "Bold"
                                 fontSizeMode: Text.Fit
@@ -1043,6 +1049,7 @@ Item {
                                     }
                                 }
                             }
+
                         }
                         TableViewColumn {
                             id: txStatusColumn
@@ -1061,7 +1068,7 @@ Item {
                                         id: statusRow
                                         Layout.alignment: Qt.AlignLeft
                                         anchors.fill: parent
-                                        anchors.leftMargin: 10
+                                        anchors.leftMargin: 20
                                         spacing: 10
 
                                         SvgImage {
