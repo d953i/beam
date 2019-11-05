@@ -1,63 +1,64 @@
-set (TARGET_NAME "quazip_static")
+cmake_minimum_required(VERSION 2.6)
+project(QuaZip)
 
-set (CMAKE_PREFIX_PATH $ENV{QT5_ROOT_DIR})
+# CMP0042: Explicitly acknowledge MACOSX_RPATH
+# (introduced in CMake 2.8.12, enabled by default in CMake 3.0,
+# and producing a warning when unset since 3.7.1)
+cmake_policy(SET CMP0042 NEW)
 
-if(LINUX)
-	set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+option(BUILD_WITH_QT4 "Build QuaZip with Qt4 no matter if Qt5 was found" OFF)
+
+if(NOT BUILD_WITH_QT4)
+    # try Qt5 first, and prefer that if found
+    find_package(Qt5Core QUIET)
 endif()
 
-find_package(Qt5 COMPONENTS Core REQUIRED)
+if(Qt5Core_FOUND)
+    set(CMAKE_CXX_STANDARD 11)
+    set(QTCORE_LIBRARIES ${Qt5Core_LIBRARIES})
+    set(QUAZIP_LIB_VERSION_SUFFIX 5)
+    # if there is no QT_ROOT, try to deduce it from Qt QtCore include
+    if("${QT_ROOT}" STREQUAL "")
+        set(QT_ROOT ${QT_QTCORE_INCLUDE_DIR}/../..)
+    endif()
+    include_directories(${Qt5Core_INCLUDE_DIRS})
 
-set(QUAZIP_SRCS
-    quazip/JlCompress.cpp
-    quazip/qioapi.cpp
-    quazip/quaadler32.cpp
-    quazip/quacrc32.cpp
-    quazip/quagzipfile.cpp
-    quazip/quaziodevice.cpp
-    quazip/quazip.cpp
-    quazip/quazipdir.cpp
-    quazip/quazipfile.cpp
-    quazip/quazipfileinfo.cpp
-    quazip/quazipnewinfo.cpp
-    quazip/unzip.c
-    quazip/zip.c
-)
+    macro(qt_wrap_cpp)
+        qt5_wrap_cpp(${ARGN})
+    endmacro()
+else()
+    set(qt_min_version "4.5.0")
+    find_package(Qt4 REQUIRED)
+    set(QT_USE_QTGUI false)
+    include(${QT_USE_FILE})
+    include_directories(${QT_INCLUDES})
+    set(QTCORE_LIBRARIES ${QT_QTCORE_LIBRARY})
 
-set(PUBLIC_HEADERS
-    quazip/ioapi.h
-    quazip/JlCompress.h
-    quazip/minizip_crypt.h
-    quazip/quaadler32.h
-    quazip/quachecksum32.h
-    quazip/quacrc32.h
-    quazip/quagzipfile.h
-    quazip/quaziodevice.h
-    quazip/quazip.h
-    quazip/quazipdir.h
-    quazip/quazipfile.h
-    quazip/quazipfileinfo.h
-    quazip/quazipnewinfo.h
-    quazip/unzip.h
-    quazip/zip.h
-)
-
-qt5_wrap_cpp(MOC_SRCS ${PUBLIC_HEADERS})
-set(QUAZIP_ALL_SRCS ${QUAZIP_SRCS} ${MOC_SRCS})
-
-add_library(${TARGET_NAME} STATIC ${QUAZIP_ALL_SRCS})
-
-add_definitions(-DQUAZIP_STATIC)
-
-target_include_directories(${TARGET_NAME} PRIVATE ${Qt5Core_INCLUDE_DIRS})
-target_include_directories(${TARGET_NAME} PRIVATE ${CMAKE_PREFIX_PATH}/include/QtZlib)
-target_include_directories(${TARGET_NAME} PRIVATE ${PROJECT_SOURCE_DIR}/3rdparty/quazip)
-
-if(MSVC)
-    target_compile_options(${TARGET_NAME} PRIVATE "/wd4456")
-    target_compile_options(${TARGET_NAME} PRIVATE "/wd4131")
-    target_compile_options(${TARGET_NAME} PRIVATE "/wd4244")
+    macro(qt_wrap_cpp)
+        qt4_wrap_cpp(${ARGN})
+    endmacro()
 endif()
-if(UNIX)
-	target_link_libraries(${TARGET_NAME} z)
+
+# Use system zlib on unix and Qt ZLIB on Windows
+if(UNIX OR MINGW)
+    find_package(ZLIB REQUIRED)
+else()
+    set(ZLIB_INCLUDE_DIRS "${QT_ROOT}/src/3rdparty/zlib" CACHE STRING "Path to ZLIB headers of Qt")
+    set(ZLIB_LIBRARIES "")
+    if(NOT EXISTS "${ZLIB_INCLUDE_DIRS}/zlib.h")
+        message("Please specify a valid zlib include dir")
+    endif()
 endif()
+
+# All build libraries are moved to this directory
+set(LIBRARY_OUTPUT_PATH ${CMAKE_BINARY_DIR})
+
+set(LIB_SUFFIX "" CACHE STRING "Define suffix of directory name (32/64)")
+set(LIB_DESTINATION "${CMAKE_INSTALL_PREFIX}/lib${LIB_SUFFIX}" CACHE STRING "Library directory name" FORCE)
+set(INSTALL_PKGCONFIG_DIR "${CMAKE_INSTALL_PREFIX}/lib${LIB_SUFFIX}/pkgconfig" CACHE STRING "Installation directory for pkgconfig (.pc) files" FORCE)
+set(QUAZIP_LIB_TARGET_NAME quazip${QUAZIP_LIB_VERSION_SUFFIX} CACHE
+    INTERNAL "Target name of libquazip" FORCE)
+
+add_subdirectory(quazip)
+
+install(FILES QuaZipConfig.cmake DESTINATION ${LIB_DESTINATION}/cmake/QuaZip${QUAZIP_LIB_VERSION_SUFFIX} RENAME QuaZip${QUAZIP_LIB_VERSION_SUFFIX}Config.cmake)
