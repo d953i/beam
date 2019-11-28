@@ -15,6 +15,7 @@
 #pragma once
 
 #include "wallet/bitcoin/settings.h"
+#include "common.h"
 
 namespace beam::qtum
 {
@@ -28,14 +29,16 @@ namespace beam::qtum
             : bitcoin::Settings()
         {
             constexpr uint16_t kQtumDefaultTxMinConfirmations = 10;
-            // TODO: uncomment after tests
-            //constexpr uint32_t kQtumDefaultLockTimeInBlocks = 60;  // 48h
-            //constexpr uint32_t kQtumDefaultLockTimeInBlocks = 2 * 600;  // 48h
+            constexpr double kQtumBlocksPerHour = 25;
+            constexpr uint32_t kQtumDefaultLockTimeInBlocks = 12 * 25;  // 12h
+            constexpr Amount kQtumMinFeeRate = 500000;
 
             SetTxMinConfirmations(kQtumDefaultTxMinConfirmations);
-            // TODO: uncomment after tests
-            /*SetLockTimeInBlocks(kQtumDefaultLockTimeInBlocks);*/
-            SetMinFeeRate(90000);
+            SetLockTimeInBlocks(kQtumDefaultLockTimeInBlocks);
+            SetFeeRate(kQtumMinFeeRate);
+            SetMinFeeRate(kQtumMinFeeRate);
+            SetBlocksPerHour(kQtumBlocksPerHour);
+            SetAddressVersion(getAddressVersion());
         }
     };
 } // namespace beam::qtum

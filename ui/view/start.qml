@@ -41,6 +41,7 @@ Item
         //% "I agree"
         okButtonText: qsTrId("start-restore-confirm-button")
         okButtonIconSource: "qrc:/assets/icon-done.svg"
+        okButtonAllLowercase: false
         cancelButtonVisible: false
         width: 460
         height: contentItem.implicitHeight + footer.implicitHeight
@@ -1660,9 +1661,13 @@ Item
                             }
 
                             SFText {
-                                //% "Strong password needs to meet the following requirements:\n•  the length must be at least 10 characters\n•  must contain at least one lowercase letter\n•  must contain at least one uppercase letter\n•  must contain at least one number"
+/*% "Strong password needs to meet the following requirements:
+•  the length must be at least 10 characters
+•  must contain at least one lowercase letter
+•  must contain at least one uppercase letter
+•  must contain at least one number"
+*/
                                 text: qsTrId("start-create-pwd-strength-message")
-                                // text: "Strong password needs to meet the following requirements:\n•  the length must be at least 10 characters\n•  must contain at least one lowercase letter\n•  must contain at least one uppercase letter\n•  must contain at least one number"
                                 color: Style.content_secondary
                                 visible: strengthChecker.strength > 0 && strengthChecker.strength < 6
                                 font.pixelSize: 14
@@ -2189,13 +2194,11 @@ Item
                             }
 
                             Item {
-                                Layout.preferredHeight: 20
-                            }
-
-                            Item {
                                 Layout.alignment: Qt.AlignHCenter
                                 Layout.fillHeight: true
                                 Layout.preferredHeight: 36
+                                Layout.topMargin: 20
+                                Layout.bottomMargin: 9
                                 Rectangle {
                                     id: capsWarning
                                     anchors.centerIn: parent
@@ -2217,16 +2220,11 @@ Item
                                     visible: viewModel.isCapsLockOn 
                                 }
                             }
-                            Item {
-                                Layout.fillHeight: true
-                                Layout.minimumHeight: 9
-                                Layout.maximumHeight: 6
-                            }
 
                             Row {
                                 Layout.alignment: Qt.AlignHCenter
                                 Layout.preferredHeight: 16
-                                spacing: 30
+                                // spacing: 30
                                 SFText {
                                     Layout.alignment: Qt.AlignHCenter
                                     //% "Restore wallet or create a new one"
@@ -2247,7 +2245,7 @@ Item
 
                             Item {
                                 Layout.fillHeight: true
-                                Layout.minimumHeight: 67
+                                Layout.minimumHeight: 40
                             }
 
                             SFText {

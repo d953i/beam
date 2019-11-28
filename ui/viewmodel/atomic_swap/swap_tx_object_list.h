@@ -28,6 +28,7 @@ public:
         TimeCreated = Qt::UserRole + 1,
         TimeCreatedSort,
         AmountGeneralWithCurrency,
+        AmountGeneralWithCurrencySort,
         AmountGeneral,
         AmountGeneralSort,
         AddressFrom,
@@ -59,9 +60,11 @@ public:
         IsLockTxProofReceived,
         IsRefundTxProofReceived,
         AmountSendWithCurrency,
+        AmountSendWithCurrencySort,
         AmountSend,
         AmountSendSort,
         AmountReceiveWithCurrency,
+        AmountReceiveWithCurrencySort,
         AmountReceive,
         AmountReceiveSort,
         Token,
@@ -75,7 +78,8 @@ public:
         SwapCoinRefundTxConfirmations,
         BeamLockTxKernelId,
         BeamRedeemTxKernelId,
-        BeamRefundTxKernelId
+        BeamRefundTxKernelId,
+        SwapState
     };
 
     SwapTxObjectList();

@@ -18,9 +18,14 @@
 
 namespace beam::bitcoin
 {
+    uint64_t btc_to_satoshi(double btc)
+    {
+        return static_cast<uint64_t>(std::round(btc * libbitcoin::satoshi_per_bitcoin));
+    }
+
     uint8_t getAddressVersion()
     {
-#ifdef BEAM_MAINNET
+#if defined(BEAM_MAINNET) || defined(SWAP_MAINNET)
         return libbitcoin::wallet::ec_private::mainnet_p2kh;
 #else
 
@@ -42,7 +47,7 @@ namespace beam::bitcoin
     {
         auto hd_seed = libbitcoin::wallet::electrum::decode_mnemonic(words);
         libbitcoin::data_chunk seed_chunk(libbitcoin::to_chunk(hd_seed));
-#ifdef BEAM_MAINNET
+#if defined(BEAM_MAINNET) || defined(SWAP_MAINNET)
         libbitcoin::wallet::hd_private masterPrivateKey(seed_chunk, libbitcoin::wallet::hd_public::mainnet);
 #else
         libbitcoin::wallet::hd_private masterPrivateKey(seed_chunk, libbitcoin::wallet::hd_public::testnet);

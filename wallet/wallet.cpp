@@ -43,13 +43,13 @@ namespace beam::wallet
 
             if (currentTime_s > currentBlockTime_s)
             {
-                LOG_INFO() << "It seems that node is not up to date";
+                LOG_INFO() << "It seems that last known blockchain tip is not up to date";
                 return false;
             }
             return true;
         }
 
-        bool ApplyTransactionParameters(BaseTransaction::Ptr tx, const PackedTxParameters& parameters, bool allowPrivate = false)
+        bool ApplyTransactionParameters(BaseTransaction::Ptr tx, const PackedTxParameters& parameters, bool isInternalSource, bool allowPrivate = false)
         {
             bool txChanged = false;
             SubTxID subTxID = kDefaultSubTxID;
@@ -66,6 +66,11 @@ namespace beam::wallet
 
                 if (allowPrivate || p.first < TxParameterID::PrivateFirstParam)
                 {
+                    if (!isInternalSource && !tx->IsTxParameterExternalSettable(p.first, subTxID))
+                    {
+                        LOG_WARNING() << tx->GetTxID() << "Attempt to set internal tx parameter: " << static_cast<int>(p.first);
+                        continue;
+                    }
                     txChanged |= tx->SetParameter(p.first, p.second, subTxID);
                 }
                 else
@@ -232,6 +237,22 @@ namespace beam::wallet
         {
             ResumeTransaction(tx);
         }
+    }
+
+    bool Wallet::IsWalletInSync() const
+    {
+        Block::SystemState::Full state;
+        get_tip(state);
+
+        return IsValidTimeStamp(state.m_TimeStamp);
+    }
+
+    size_t Wallet::GetUnsafeActiveTransactionsCount() const
+    {
+        return std::count_if(m_ActiveTransactions.begin(), m_ActiveTransactions.end(), [](const auto& p)
+            {
+                return !p.second->IsInSafety();
+            });
     }
 
     void Wallet::OnAsyncStarted()
@@ -407,7 +428,7 @@ namespace beam::wallet
             return;
         }
 
-        if (ApplyTransactionParameters(t, msg.m_Parameters))
+        if (ApplyTransactionParameters(t, msg.m_Parameters, false))
         {
             UpdateTransaction(msg.m_TxID);
         }
@@ -542,6 +563,12 @@ namespace beam::wallet
         {
             tx->SetParameter(TxParameterID::Kernel, r.m_Res.m_Kernel, r.m_SubTxID);
             tx->SetParameter(TxParameterID::KernelProofHeight, r.m_Res.m_Height, r.m_SubTxID);
+        }
+        else
+        {
+            Block::SystemState::Full sTip;
+            get_tip(sTip);
+            tx->SetParameter(TxParameterID::KernelUnconfirmedHeight, sTip.m_Height, r.m_SubTxID);
         }
     }
 
@@ -930,7 +957,15 @@ namespace beam::wallet
             {
                 LOG_WARNING() << msg.m_TxID << " Parameters for invalid tx type";
             }
-            it->second->SetParameter(TxParameterID::PeerID, msg.m_From, false);
+            if (WalletID peerID; it->second->GetParameter(TxParameterID::PeerID, peerID) && peerID != msg.m_From)
+            {
+                // if we already have PeerID, we should ignore messages from others
+                return BaseTransaction::Ptr();
+            }
+            else
+            {
+                it->second->SetParameter(TxParameterID::PeerID, msg.m_From, false);
+            }
             return it->second;
         }
 
@@ -941,8 +976,14 @@ namespace beam::wallet
             return BaseTransaction::Ptr();
         }
 
+        if (msg.m_Type == TxType::AtomicSwap)
+        {
+            // we don't create swap from SBBS message
+            return BaseTransaction::Ptr();
+        }
+
         bool isSender = false;
-        if (!msg.GetParameter(TxParameterID::IsSender, isSender) || (isSender == true && msg.m_Type != TxType::AtomicSwap))
+        if (!msg.GetParameter(TxParameterID::IsSender, isSender) || isSender == true)
         {
             return BaseTransaction::Ptr();
         }
@@ -1011,7 +1052,7 @@ namespace beam::wallet
         auto completedParameters = it->second->CheckAndCompleteParameters(parameters);
 
         auto newTx = it->second->Create(*this, m_WalletDB, m_KeyKeeper, *parameters.GetTxID());
-        ApplyTransactionParameters(newTx, completedParameters.Pack());
+        ApplyTransactionParameters(newTx, completedParameters.Pack(), true);
         return newTx;
     }
 

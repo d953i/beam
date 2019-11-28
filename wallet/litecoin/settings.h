@@ -15,6 +15,7 @@
 #pragma once
 
 #include "wallet/bitcoin/settings.h"
+#include "common.h"
 
 namespace beam::litecoin
 {
@@ -27,10 +28,15 @@ namespace beam::litecoin
         Settings()
             : bitcoin::Settings()
         {
-            // TODO: uncomment after tests
-            //constexpr uint32_t kLTCDefaultLockTimeInBlocks = 2 * 24 * 4 * 6;
-            //SetLockTimeInBlocks(kLTCDefaultLockTimeInBlocks);
-            SetMinFeeRate(90000);
+            constexpr double kLTCBlocksPerHour = 24;
+            constexpr uint32_t kLTCDefaultLockTimeInBlocks = 12 * 24;  // 12h
+            constexpr Amount kLtcMinFeeRate = 90000;
+
+            SetLockTimeInBlocks(kLTCDefaultLockTimeInBlocks);
+            SetFeeRate(kLtcMinFeeRate);
+            SetMinFeeRate(kLtcMinFeeRate);
+            SetBlocksPerHour(kLTCBlocksPerHour);
+            SetAddressVersion(getAddressVersion());
         }
     };
 } //namespace beam::litecoin

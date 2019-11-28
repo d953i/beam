@@ -60,9 +60,8 @@ namespace beam::bitcoin
 
     public:
         Electrum() = delete;
-        Electrum(beam::io::Reactor& reactor, IElectrumSettingsProvider& settingsProvider);
+        Electrum(beam::io::Reactor& reactor, ISettingsProvider& settingsProvider);
 
-        void dumpPrivKey(const std::string& btcAddress, std::function<void(const Error&, const std::string&)> callback) override;
         void fundRawTransaction(const std::string& rawTx, Amount feeRate, std::function<void(const Error&, const std::string&, int)> callback) override;
         void signRawTransaction(const std::string& rawTx, std::function<void(const Error&, const std::string&, bool)> callback) override;
         void sendRawTransaction(const std::string& rawTx, std::function<void(const Error&, const std::string&)> callback) override;
@@ -74,7 +73,7 @@ namespace beam::bitcoin
             int outputIndex,
             Timestamp locktime,
             std::function<void(const Error&, const std::string&)> callback) override;
-        void getTxOut(const std::string& txid, int outputIndex, std::function<void(const Error&, const std::string&, double, uint32_t)> callback) override;
+        void getTxOut(const std::string& txid, int outputIndex, std::function<void(const Error&, const std::string&, Amount, uint32_t)> callback) override;
         void getBlockCount(std::function<void(const Error&, uint64_t)> callback) override;
         void getBalance(uint32_t confirmations, std::function<void(const Error&, Amount)> callback) override;
 
@@ -96,7 +95,7 @@ namespace beam::bitcoin
         beam::io::Reactor& m_reactor;
         std::map<uint64_t, TCPConnect> m_connections;
         uint64_t m_idCounter = 0;
-        IElectrumSettingsProvider& m_settingsProvider;
+        ISettingsProvider& m_settingsProvider;
 
         std::vector<LockUtxo> m_lockedUtxo;
         std::vector<Utxo> m_cache;

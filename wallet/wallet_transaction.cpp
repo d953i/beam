@@ -25,12 +25,12 @@ namespace beam::wallet
     using namespace ECC;
     using namespace std;
 
-    TxParameters CreateSimpleTransactionParameters(boost::optional<TxID> txId)
+    TxParameters CreateSimpleTransactionParameters(const boost::optional<TxID>& txId)
     {
         return CreateTransactionParameters(TxType::Simple, txId ? *txId : GenerateTxID()).SetParameter(TxParameterID::TransactionType, TxType::Simple);
     }
 
-    TxParameters CreateSplitTransactionParameters(const WalletID& myID, const AmountList& amountList, boost::optional<TxID> txId)
+    TxParameters CreateSplitTransactionParameters(const WalletID& myID, const AmountList& amountList, const boost::optional<TxID>& txId)
     {
         return CreateSimpleTransactionParameters(txId)
             .SetParameter(TxParameterID::MyID, myID)
@@ -101,6 +101,12 @@ namespace beam::wallet
         return TxType::Simple;
     }
 
+    bool SimpleTransaction::IsInSafety() const
+    {
+        State txState = GetState();
+        return txState == State::KernelConfirmation;
+    }
+
     void SimpleTransaction::UpdateImpl()
     {
         bool isSender = GetMandatoryParameter<bool>(TxParameterID::IsSender);
@@ -138,6 +144,8 @@ namespace beam::wallet
                     << PrintableAmount(builder.GetAmount())
                     << " (fee: " << PrintableAmount(builder.GetFee()) << ")";
 
+                UpdateTxDescription(TxStatus::InProgress);
+
                 if (isSender)
                 {
                     Height maxResponseHeight = 0;
@@ -158,8 +166,6 @@ namespace beam::wallet
                         builder.GenerateNewCoin(amount, false);
                     }
                 }
-
-                UpdateTxDescription(TxStatus::InProgress);
 
                 builder.GenerateOffset();
             }

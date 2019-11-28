@@ -12,39 +12,26 @@ Item {
     Layout.fillWidth: true
     Layout.fillHeight: true
 
-    // callbacks for send views
-    function onAccepted() {
-        offersStackView.pop();
-        offersViewComponent.atomicSwapLayout.state = "transactions";
-        offersViewComponent.transactionsTab.state = "filterInProgressTransactions";
-    }
-    function onClosed() {
-        offersStackView.pop();
-    }
-    function onSwapToken(token) {
-        tokenDuplicateChecker.checkTokenForDuplicate(token);
-    }
-
     SwapOffersViewModel {
         id: viewModel
     }
 
     ConfirmationDialog {
         id: betaDialog
-        //% "Atomic Swap is in BETA"
+        //% "Atomic Swaps are in BETA"
         title: qsTrId("swap-beta-title")
         //% "I understand"
         okButtonText:        qsTrId("swap-alert-confirm-button")
         okButtonIconSource:  "qrc:/assets/icon-done.svg"
         cancelButtonVisible: false
         width: 470
-        //% "Atomic Swap functionality is Beta at the moment. We recommend you not to send large amounts."
+        //% "Atomic Swaps functionality is Beta at the moment. We recommend you not to send large amounts."
         text: qsTrId("swap-beta-message")
     }
 
     ConfirmationDialog {
         id:                     cancelOfferDialog
-        property var txId: undefined
+        property var txId:      undefined
         width:                  460
         //% "Cancel offer"
         title:                  qsTrId("atomic-swap-cancel")
@@ -70,30 +57,22 @@ Item {
         }
     }
 
-    TokenDuplicateChecker {
-        id: tokenDuplicateChecker
+    ConfirmationDialog {
+        id:                     cancelSwapDialog
+        property var txId:      undefined
+        //% "Cancel atomic swap"
+        title:                  qsTrId("atomic-swap-tx-cancel")
+        //% "Are you sure you want to cancel?"
+        text:                   qsTrId("atomic-swap-tx-cancel-text")
+        //% "yes"
+        okButtonText:           qsTrId("atomic-swap-tx-yes-button")
+        okButtonIconSource:     "qrc:/assets/icon-done.svg"
+        okButtonColor:          Style.swapCurrencyStateIndicator
+        //% "no"
+        cancelButtonText:       qsTrId("atomic-swap-no-button")
+        cancelButtonIconSource: "qrc:/assets/icon-cancel-16.svg"
         onAccepted: {
-            offersStackView.pop();
-        }
-        Connections {
-            target: tokenDuplicateChecker.model
-            onTokenPreviousAccepted: function(token) {
-                tokenDuplicateChecker.isOwn = false;
-                tokenDuplicateChecker.open();
-            }
-            onTokenFirstTimeAccepted: function(token) {
-                offersStackView.pop();
-                offersStackView.push(Qt.createComponent("send_swap.qml"),
-                                     {
-                                         "onAccepted": onAccepted,
-                                         "onClosed": onClosed
-                                     });
-                offersStackView.currentItem.setToken(token);
-            }
-            onTokenOwnGenerated: function(token) {
-                tokenDuplicateChecker.isOwn = true;
-                tokenDuplicateChecker.open();
-            }
+            viewModel.cancelTx(cancelSwapDialog.txId);
         }
     }
 
@@ -105,7 +84,7 @@ Item {
 
     RowLayout {
         Title {
-            //% "Atomic Swap"
+            //% "Atomic Swaps"
             text: qsTrId("atomic-swap-title")
         }
 
@@ -132,6 +111,46 @@ Item {
             spacing: 0
             state: "offers"
 
+            // callbacks for send views
+            function onAccepted() {
+                offersStackView.pop();
+                atomicSwapLayout.state = "transactions";
+                transactionsTab.state = "filterInProgressTransactions";
+            }
+            function onClosed() {
+                offersStackView.pop();
+            }
+            function onSwapToken(token) {
+                tokenDuplicateChecker.checkTokenForDuplicate(token);
+            }
+            
+            TokenDuplicateChecker {
+                id: tokenDuplicateChecker
+                onAccepted: {
+                    offersStackView.pop();
+                }
+                Connections {
+                    target: tokenDuplicateChecker.model
+                    onTokenPreviousAccepted: function(token) {
+                        tokenDuplicateChecker.isOwn = false;
+                        tokenDuplicateChecker.open();
+                    }
+                    onTokenFirstTimeAccepted: function(token) {
+                        offersStackView.pop();
+                        offersStackView.push(Qt.createComponent("send_swap.qml"),
+                                            {
+                                                "onAccepted": atomicSwapLayout.onAccepted,
+                                                "onClosed": atomicSwapLayout.onClosed
+                                            });
+                        offersStackView.currentItem.setToken(token);
+                    }
+                    onTokenOwnGenerated: function(token) {
+                        tokenDuplicateChecker.isOwn = true;
+                        tokenDuplicateChecker.open();
+                    }
+                }
+            }
+
             RowLayout {
                 Layout.alignment: Qt.AlignRight | Qt.AlignTop
                 Layout.topMargin: 33
@@ -148,13 +167,10 @@ Item {
                     //% "Accept offer"
                     text: qsTrId("atomic-swap-accept")
                     font.pixelSize: 12
-                    //font.capitalization: Font.AllUppercase
-
                     onClicked: {
                         offersStackView.push(Qt.createComponent("send.qml"),
                                              {
-                                                "isSwapMode": true,
-                                                "onClosed": onClosed,
+                                                "onClosed":    onClosed,
                                                 "onSwapToken": onSwapToken
                                              });
                     }
@@ -174,10 +190,8 @@ Item {
                     //font.capitalization: Font.AllUppercase
 
                     onClicked: {
-                        offersStackView.push(Qt.createComponent("receive_swap.qml"),
-                                            {"modeSwitchEnabled": false,
-                                             "onClosed": onClosed});
-                        function onClosed() { offersStackView.pop(); }
+                        function onClosed() {offersStackView.pop();}
+                        offersStackView.push(Qt.createComponent("receive_swap.qml"), {"onClosed": onClosed});
                     }
                 }
             }
@@ -202,7 +216,7 @@ Item {
                     }
                     gradLeft: Style.swapCurrencyPaneGrLeftBEAM
                     currencyIcon: "qrc:/assets/icon-beam.svg"
-                    amount: Utils.uiStringToLocale(viewModel.beamAvailable)
+                    amount: viewModel.beamAvailable
                     currencySymbol: Utils.symbolBeam
                     valueSecondaryStr: activeTxCountStr()
                     visible: true
@@ -226,7 +240,7 @@ Item {
                 SwapCurrencyAmountPane {
                     gradLeft: Style.swapCurrencyPaneGrLeftBTC
                     currencyIcon: "qrc:/assets/icon-btc.svg"
-                    amount: viewModel.hasBtcTx ? "" : Utils.uiStringToLocale(viewModel.btcAvailable)
+                    amount: viewModel.hasBtcTx ? "" : viewModel.btcAvailable
                     currencySymbol: Utils.symbolBtc
                     valueSecondaryStr: parent.btcActiveTxStr()
                     isOk: viewModel.btcOK
@@ -241,7 +255,7 @@ Item {
                 SwapCurrencyAmountPane {
                     gradLeft: Style.swapCurrencyPaneGrLeftLTC
                     currencyIcon: "qrc:/assets/icon-ltc.svg"
-                    amount: viewModel.hasLtcTx ? "" : Utils.uiStringToLocale(viewModel.ltcAvailable)
+                    amount: viewModel.hasLtcTx ? "" : viewModel.ltcAvailable
                     currencySymbol: Utils.symbolLtc
                     valueSecondaryStr: parent.ltcActiveTxStr()
                     isOk: viewModel.ltcOK
@@ -254,7 +268,7 @@ Item {
                 SwapCurrencyAmountPane {
                     gradLeft: Style.swapCurrencyPaneGrLeftQTUM
                     currencyIcon: "qrc:/assets/icon-qtum.svg"
-                    amount: viewModel.hasQtumTx ? "" : Utils.uiStringToLocale(viewModel.qtumAvailable)
+                    amount: viewModel.hasQtumTx ? "" : viewModel.qtumAvailable
                     currencySymbol: Utils.symbolQtum
                     valueSecondaryStr: parent.qtumActiveTxStr()
                     isOk: viewModel.qtumOK
@@ -270,6 +284,7 @@ Item {
                     gradRight: Style.swapCurrencyPaneGrLeftOther
                     //% "Connect other currency wallet to start trading"
                     amount: qsTrId("atomic-swap-connect-other")
+                    amountWrapMode: Text.Wrap
                     textSize: 14
                     rectOpacity: 1.0
                     textColor: Style.active
@@ -309,19 +324,30 @@ Item {
                     //% "Active offers"
                     label: qsTrId("atomic-swap-active-offers-tab")
                     onClicked: atomicSwapLayout.state = "offers"
-                    capitalization: Font.AllUppercase
+                    showLed: false
+                    font {
+                        pixelSize: 14
+                        letterSpacing: 4
+                        capitalization: Font.AllUppercase
+                    }
                 }
 
                 TxFilter {
                     id: transactionsTabSelector
                     Layout.alignment: Qt.AlignTop
+                    Layout.leftMargin: 40
                     //% "Transactions"
                     label: qsTrId("atomic-swap-transactions-tab")
                     onClicked: {
                         atomicSwapLayout.state = "transactions";
                         transactionsTab.state = "filterAllTransactions"
                     }
-                    capitalization: Font.AllUppercase
+                    showLed: false
+                    font {
+                        pixelSize: 14
+                        letterSpacing: 4
+                        capitalization: Font.AllUppercase
+                    }
                 }
             }
             
@@ -408,9 +434,6 @@ Item {
                             Layout.leftMargin: 60
                             //% "Fit my current balance"
                             text: qsTrId("atomic-swap-fit-current-balance")
-                            onClicked: {
-                                console.log("todo: fit current balance checkbox pressed");
-                            }
                             visible: false
                         }
 
@@ -467,7 +490,9 @@ Item {
                             color:                Style.content_main
                             opacity:              0.5
                             lineHeight:           1.43
-                            //% "There are no active offers at the moment.\nPlease try again later or create an offer yourself."
+/*% "There are no active offers at the moment.
+Please try again later or create an offer yourself."
+*/
                             text:                 qsTrId("atomic-no-offers")
                         }
 
@@ -673,6 +698,7 @@ Item {
                                         MouseArea {
                                             anchors.fill: parent
                                             acceptedButtons: Qt.LeftButton
+                                            cursorShape: Qt.PointingHandCursor
                                             onClicked: {
                                                 if (isOwnOffer) {
                                                     cancelOfferDialog.txId = offersTable.model.getRoleValue(styleData.row, "rawTxID");
@@ -697,7 +723,7 @@ Item {
                     visible: false
 
                     anchors.fill: parent
-                    anchors.topMargin: 14
+                    anchors.topMargin: 20
 
                     state: "filterAllTransactions"
 
@@ -723,13 +749,11 @@ Item {
                             Layout.fillWidth: true
                         }
 
-                        CustomButton {
-                            Layout.alignment: Qt.AlignRight
-                            rightPadding: 5
-                            textOpacity: 0
-                            icon.source: "qrc:/assets/icon-delete.svg"
-                            onClicked: console.log("todo: delete button pressed");
-                        }
+                        //CustomToolButton {
+                        //    Layout.alignment: Qt.AlignRight
+                        //    rightPadding: 5
+                        //    icon.source: "qrc:/assets/icon-delete.svg"
+                        //}
                     }
 
                     states: [
@@ -751,7 +775,7 @@ Item {
                         Layout.alignment: Qt.AlignTop
                         Layout.fillWidth: true
                         Layout.fillHeight: true
-                        Layout.topMargin: 12
+                        Layout.topMargin: 14
 
                         property int rowHeight: 56
                         property int columnWidth: (width - txSwapCoinsColumn.width - txSwapActionColumn.width) / 6
@@ -845,6 +869,7 @@ Item {
                                         beamLockTxKernelId:             txRolesMap && txRolesMap.beamLockTxKernelId ? txRolesMap.beamLockTxKernelId : ""
                                         beamRedeemTxKernelId:           txRolesMap && txRolesMap.beamRedeemTxKernelId ? txRolesMap.beamRedeemTxKernelId : ""
                                         beamRefundTxKernelId:           txRolesMap && txRolesMap.beamRefundTxKernelId ? txRolesMap.beamRefundTxKernelId : ""
+                                        stateDetails:                   txRolesMap && txRolesMap.swapState ? txRolesMap.swapState : ""
                                         failureReason:                  txRolesMap && txRolesMap.failureReason ? txRolesMap.failureReason : ""
                                         
                                         onTextCopied: function (text) {
@@ -1078,21 +1103,7 @@ Item {
                                             Layout.alignment: Qt.AlignLeft
 
                                             sourceSize: Qt.size(20, 20)
-                                            source: getIconSource()
-                                            function getIconSource() {
-                                                if (!model)
-                                                    return "";
-                                                if (model.isInProgress)
-                                                    return "qrc:/assets/icon-swap-in-progress.svg";
-                                                else if (model.isCompleted)
-                                                    return "qrc:/assets/icon-swap-completed.svg";
-                                                else if (model.isCanceled)
-                                                    return "qrc:/assets/icon-swap-canceled.svg";
-                                                else if (model.isExpired)
-                                                    return "qrc:/assets/icon-expired.svg";
-                                                else
-                                                    return "qrc:/assets/icon-swap-failed.svg";
-                                            }
+                                            source: getIconSource(styleData.value)
                                         }
                                         SFLabel {
                                             Layout.alignment: Qt.AlignLeft
@@ -1102,19 +1113,7 @@ Item {
                                             wrapMode: Text.WordWrap
                                             text: getStatusText(styleData.value)
                                             verticalAlignment: Text.AlignBottom
-                                            color: getTextColor()
-                                            function getTextColor () {
-                                                if (!model || model.isExpired) 
-                                                    return Style.content_secondary;
-                                                if (model.isInProgress || model.isCompleted) {
-                                                    return Style.accent_swap;
-                                                } else if (model.isFailed) {
-                                                    return Style.accent_fail;
-                                                }
-                                                else {
-                                                    return Style.content_secondary;
-                                                }
-                                            }
+                                            color: getTextColor(styleData.value)
                                         }
                                     }
                                 }
@@ -1130,7 +1129,7 @@ Item {
                         }
 
                         function showContextMenu(row) {
-                            txContextMenu.canCopyToken = true;
+                            txContextMenu.canCopyToken = transactionsTable.model.getRoleValue(row, "isPending");;
                             txContextMenu.token = transactionsTable.model.getRoleValue(row, "token");
                             txContextMenu.cancelEnabled = transactionsTable.model.getRoleValue(row, "isCancelAvailable");
                             txContextMenu.deleteEnabled = transactionsTable.model.getRoleValue(row, "isDeleteAvailable");
@@ -1186,7 +1185,8 @@ Item {
                             icon.source: "qrc:/assets/icon-cancel.svg"
                             enabled: txContextMenu.cancelEnabled
                             onTriggered: {
-                                viewModel.cancelTx(txContextMenu.txID);
+                                cancelSwapDialog.txId = txContextMenu.txID;
+                                cancelSwapDialog.open();
                             }
                         }
                         Action {
@@ -1262,24 +1262,49 @@ Item {
         }
     }
 
+    function getTextColor(status) {
+        switch(status)
+        {
+            case "pending":
+            case "in progress":
+            case "completed":
+                return Style.accent_swap;
+            case "failed":
+                return Style.accent_fail;
+            default:
+                return Style.content_secondary;
+        }
+    }
+
+    function getIconSource(status) {
+        switch(status)
+        {
+            case "pending":
+            case "in progress":
+                return "qrc:/assets/icon-swap-in-progress.svg";
+            case "completed":
+                return "qrc:/assets/icon-swap-completed.svg";
+            case "failed":
+                return "qrc:/assets/icon-swap-failed.svg";
+            case "canceled":
+                return "qrc:/assets/icon-swap-canceled.svg";
+            case "expired":
+                return "qrc:/assets/icon-expired.svg";
+            default: return "";
+        }
+    }
+
     function getStatusText(value) {
 
         switch(value) {
-            //% "pending"
-            case "pending": return qsTrId("wallet-txs-status-pending");
-            case "waiting for sender":
-            case "waiting for receiver":
-            case "receiving":
-            case "sending":
-                //% "in progress"
-                return qsTrId("wallet-txs-status-in-progress");
-            case "completed":
-            case "received":
-            case "sent":
-                //% "completed"
-                return qsTrId("wallet-txs-status-completed");
+            //% "waiting for peer"
+            case "pending": return qsTrId("wallet-txs-status-waiting-peer");
+            //% "in progress"
+            case "in progress": return qsTrId("wallet-txs-status-in-progress");
+            //% "completed"
+            case "completed": return qsTrId("wallet-txs-status-completed");
             //% "cancelled"
-            case "cancelled": return qsTrId("wallet-txs-status-cancelled");
+            case "canceled": return qsTrId("wallet-txs-status-cancelled");
             //% "expired"
             case "expired": return qsTrId("wallet-txs-status-expired");
             //% "failed"

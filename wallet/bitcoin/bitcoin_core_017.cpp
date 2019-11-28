@@ -22,7 +22,7 @@ using json = nlohmann::json;
 
 namespace beam::bitcoin
 {
-    BitcoinCore017::BitcoinCore017(io::Reactor& reactor, IBitcoinCoreSettingsProvider& settingsProvider)
+    BitcoinCore017::BitcoinCore017(io::Reactor& reactor, ISettingsProvider& settingsProvider)
         : BitcoinCore016(reactor, settingsProvider)
     {
     }
@@ -65,7 +65,7 @@ namespace beam::bitcoin
 
         std::string args("[{\"txid\": \"" + contractTxId + "\", \"vout\":" + std::to_string(outputIndex) + ", \"Sequence\": " + std::to_string(libbitcoin::max_input_sequence - 1) + " }]");
 
-        args += ",[{\"" + withdrawAddress + "\": " + std::to_string(double(amount) / libbitcoin::satoshi_per_bitcoin) + "}]";
+        args += ",[{\"" + withdrawAddress + "\": " + libbitcoin::satoshi_to_btc(amount) + "}]";
         if (locktime)
         {
             args += "," + std::to_string(locktime);

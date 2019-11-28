@@ -126,6 +126,11 @@ namespace beam::wallet
         void Subscribe(IWalletObserver* observer);
         void Unsubscribe(IWalletObserver* observer);
         void ResumeAllTransactions();
+
+        bool IsWalletInSync() const;
+
+        // Count of active transactions which are not in safe state, negotiation are not finished or data is not sent to node
+        size_t GetUnsafeActiveTransactionsCount() const;
     protected:
         void SendTransactionToNode(const TxID& txId, Transaction::Ptr, SubTxID subTxID);
     private:

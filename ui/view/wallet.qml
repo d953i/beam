@@ -121,22 +121,10 @@ Item {
                     //font.capitalization: Font.AllUppercase
 
                     onClicked: {
-                        walletStackView.push(Qt.createComponent("send.qml"),
-                                             {
-                                                 "isSwapMode": false,
-                                                 "onClosed": onClosed,
-                                                 "onSwapToken": onSwapToken,
-                                                 "onAddress": onAddress
-                                             });
-
-                        function onAddress(token) {
-                            walletStackView.pop();
-                            walletStackView.push(Qt.createComponent("send_regular.qml"),
-                                                {"onAccepted": onAccepted,
-                                                 "onClosed": onClosed,
-                                                 "onSwapToken": onSwapToken});
-                            walletStackView.currentItem.setToken(token);
-                        }
+                        walletStackView.push(Qt.createComponent("send_regular.qml"),
+                                             {"onAccepted":  onAccepted,
+                                              "onClosed":    onClosed,
+                                              "onSwapToken": onSwapToken})
                     }
                 }
 
@@ -151,21 +139,7 @@ Item {
                     //font.capitalization: Font.AllUppercase
 
                     onClicked: {
-                        walletStackView.push(Qt.createComponent("receive_regular.qml"),
-                                            {"onClosed": onClosed,
-                                             "onSwapMode": onSwapMode});
-                        function onSwapMode() {
-                            walletStackView.pop();
-                            walletStackView.push(Qt.createComponent("receive_swap.qml"),
-                                                {"onClosed": onClosed,
-                                                 "onRegularMode": onRegularMode});
-                        }
-                        function onRegularMode() {
-                            walletStackView.pop();
-                            walletStackView.push(Qt.createComponent("receive_regular.qml"),
-                                                {"onClosed": onClosed,
-                                                 "onSwapMode": onSwapMode});
-                        }
+                        walletStackView.push(Qt.createComponent("receive_regular.qml"), {"onClosed": onClosed});
                     }
                 }
             }
@@ -341,135 +315,148 @@ Item {
                     filterCaseSensitivity: Qt.CaseInsensitive
                 }
 
-                rowDelegate: Item {
-                    id: rowItem
-                    height: transactionsTable.rowHeight
-                    anchors.left: parent.left
-                    anchors.right: parent.right
-                    property bool collapsed: true
+                rowDelegate: Rectangle {
+                    id:             rowItem
+                    height:         transactionsTable.rowHeight
+                    anchors.left:   parent.left
+                    anchors.right:  parent.right
+                    color:          styleData.selected ? Style.row_selected : (styleData.alternate ? Style.background_row_even : Style.background_row_odd)
 
-                    property var myModel: parent.model
+                    property bool collapsed:   true
+                    property bool rowInModel:  styleData.row !== undefined && styleData.row >= 0 &&  styleData.row < txProxyModel.count
+                    property var  myModel:     parent.model
 
-                    onMyModelChanged: {
-                        collapsed = true;
-                        height = Qt.binding(function(){ return transactionsTable.rowHeight;});
+                    onCollapsedChanged: {
+                        height = collapsed ? transactionsTable.rowHeight : transactionsTable.rowHeight + txDetails.maximumHeight
+                        txDetails.height = collapsed ? 0 : txDetails.maximumHeight
                     }
 
-                    Rectangle {
-                        anchors.fill: parent
-                        color: styleData.selected ? Style.row_selected :
-                                (styleData.alternate ? Style.background_row_even : Style.background_row_odd)
+                    function expand(animate) {
+                       if (!rowInModel) return
+                       if (animate) expandAnimation.start()
+                       else collapsed = false
                     }
 
-                    ColumnLayout {
-                        id: rowColumn
-                        width: parent.width
-                        Rectangle {
-                            height: 56
-                            width: parent.width
-                            color: "transparent"
+                    function collapse(animate) {
+                        if (!rowInModel) return
+                        if (animate) collapseAnimation.start()
+                        else collapsed = true
+                    }
+
+                    Connections {
+                        target: searchBox
+                        onTextChanged: {
+                            searchBox.text.length ? expand() : collapse()
+                            detailsPanel.hideFiltered = true
                         }
-                        Item {
-                            id: txDetails
-                            height: 0
-                            width: parent.width
-                            clip: true
+                    }
 
-                            property int maximumHeight: detailsPanel.implicitHeight
+                    Item {
+                        id:      txDetails
+                        height:  0
+                        y:       transactionsTable.rowHeight
+                        width:   parent.width
+                        clip:    true
+                        property int maximumHeight: detailsPanel.implicitHeight
 
-                            Rectangle {
-                                anchors.fill: parent
-                                color: Style.background_details
+                        Rectangle {
+                            anchors.fill: parent
+                            color: Style.background_details
+                        }
+
+                        TransactionDetails {
+                            id: detailsPanel
+                            width: transactionsTable.width
+
+                            onHeightChanged: {
+                                if (searchFilter.length && rowItem.collapsed) expand()
+                                if (!rowItem.collapsed) {
+                                    rowItem.height = transactionsTable.rowHeight + detailsPanel.height
+                                    txDetails.height = detailsPanel.height
+                                    txDetails.visible = true
+                                    detailsPanel.visible = true
+                                }
                             }
-                            TransactionDetails {
-                                id: detailsPanel
-                                width: transactionsTable.width
 
-                                property var txRolesMap: myModel
-                                sendAddress:        txRolesMap && txRolesMap.addressFrom ? txRolesMap.addressFrom : ""
-                                receiveAddress:     txRolesMap && txRolesMap.addressTo ? txRolesMap.addressTo : ""
-                                fee:                txRolesMap && txRolesMap.fee ? txRolesMap.fee : ""
-                                comment:            txRolesMap && txRolesMap.comment ? txRolesMap.comment : ""
-                                txID:               txRolesMap && txRolesMap.txID ? txRolesMap.txID : ""
-                                kernelID:           txRolesMap && txRolesMap.kernelID ? txRolesMap.kernelID : ""
-                                status:             txRolesMap && txRolesMap.status ? txRolesMap.status : ""
-                                failureReason:      txRolesMap && txRolesMap.failureReason ? txRolesMap.failureReason : ""
-                                isIncome:           txRolesMap && txRolesMap.isIncome ? txRolesMap.isIncome : false
-                                hasPaymentProof:    txRolesMap && txRolesMap.hasPaymentProof ? txRolesMap.hasPaymentProof : false
-                                isSelfTx:           txRolesMap && txRolesMap.isSelfTransaction ? txRolesMap.isSelfTransaction : false
-                                rawTxID:            txRolesMap && txRolesMap.rawTxID ? txRolesMap.rawTxID : null
-                                searchFilter:       searchBox.text
-                                hideFiltered:       false
+                            property var txRolesMap: myModel
+                            sendAddress:        txRolesMap && txRolesMap.addressFrom ? txRolesMap.addressFrom : ""
+                            receiveAddress:     txRolesMap && txRolesMap.addressTo ? txRolesMap.addressTo : ""
+                            fee:                txRolesMap && txRolesMap.fee ? txRolesMap.fee : ""
+                            comment:            txRolesMap && txRolesMap.comment ? txRolesMap.comment : ""
+                            txID:               txRolesMap && txRolesMap.txID ? txRolesMap.txID : ""
+                            kernelID:           txRolesMap && txRolesMap.kernelID ? txRolesMap.kernelID : ""
+                            status:             txRolesMap && txRolesMap.status ? txRolesMap.status : ""
+                            failureReason:      txRolesMap && txRolesMap.failureReason ? txRolesMap.failureReason : ""
+                            isIncome:           txRolesMap && txRolesMap.isIncome ? txRolesMap.isIncome : false
+                            hasPaymentProof:    txRolesMap && txRolesMap.hasPaymentProof ? txRolesMap.hasPaymentProof : false
+                            isSelfTx:           txRolesMap && txRolesMap.isSelfTransaction ? txRolesMap.isSelfTransaction : false
+                            rawTxID:            txRolesMap && txRolesMap.rawTxID ? txRolesMap.rawTxID : null
+                            searchFilter:       searchBox.text
+                            hideFiltered:       true
 
-                                onOpenExternal : function() {
-                                    var url = Style.explorerUrl + "block?kernel_id=" + detailsPanel.kernelID;
-                                    Utils.openExternal(url, viewModel, externalLinkConfirmation);
-                                }
-                                onTextCopied: function (text) {
-                                    BeamGlobals.copyToClipboard(text);
-                                }
-                                onCopyPaymentProof: function() {
-                                    if (detailsPanel.rawTxID)
+                            onOpenExternal : function() {
+                                var url = Style.explorerUrl + "block?kernel_id=" + detailsPanel.kernelID;
+                                Utils.openExternal(url, viewModel, externalLinkConfirmation);
+                            }
+
+                            onTextCopied: function (text) {
+                                BeamGlobals.copyToClipboard(text);
+                            }
+
+                            onCopyPaymentProof: function() {
+                                if (detailsPanel.rawTxID)
+                                {
+                                    var paymentInfo = viewModel.getPaymentInfo(detailsPanel.rawTxID);
+                                    if (paymentInfo.paymentProof.length === 0)
                                     {
-                                        var paymentInfo = viewModel.getPaymentInfo(detailsPanel.rawTxID);
-                                        if (paymentInfo.paymentProof.length === 0)
-                                        {
-                                            paymentInfo.paymentProofChanged.connect(function() {
-                                                textCopied(paymentInfo.paymentProof);
-                                            });
-                                        }
-                                        else
-                                        {
+                                        paymentInfo.paymentProofChanged.connect(function() {
                                             textCopied(paymentInfo.paymentProof);
-                                        }
+                                        });
+                                    }
+                                    else
+                                    {
+                                        textCopied(paymentInfo.paymentProof);
                                     }
                                 }
-                                onShowPaymentProof: {
-                                    if (detailsPanel.rawTxID)
-                                    {
-                                        paymentInfoDialog.model = viewModel.getPaymentInfo(detailsPanel.rawTxID);
-                                        paymentInfoDialog.open();
-                                    }
+                            }
+                            onShowPaymentProof: {
+                                if (detailsPanel.rawTxID)
+                                {
+                                    paymentInfoDialog.model = viewModel.getPaymentInfo(detailsPanel.rawTxID);
+                                    paymentInfoDialog.open();
                                 }
                             }
                         }
                     }
 
                     MouseArea {
-                        anchors.top: parent.top
-                        anchors.left: parent.left
-                        height: transactionsTable.rowHeight
-                        width: parent.width
+                        anchors.top:      parent.top
+                        anchors.left:     parent.left
+                        height:           transactionsTable.rowHeight
+                        width:            parent.width
+                        acceptedButtons:  Qt.LeftButton | Qt.RightButton
 
-                        acceptedButtons: Qt.LeftButton | Qt.RightButton
                         onClicked: {
-                            if (styleData.row === undefined 
-                            || styleData.row < 0
-                            || styleData.row >= txProxyModel.count)
-                            {
-                                return;
-                            }
-                            if (mouse.button === Qt.RightButton )
-                            {
-                                transactionsTable.showContextMenu(styleData.row);
-                            }
-                            else if (mouse.button === Qt.LeftButton)
-                            {
-                                if (parent.collapsed)
-                                {
-                                    expand.start()
+                            if (rowInModel) {
+                                if (mouse.button === Qt.RightButton) {
+                                    transactionsTable.showContextMenu(styleData.row)
+                                } else if (mouse.button === Qt.LeftButton) {
+                                    if(rowItem.collapsed) {
+                                        expand(true)
+                                        return
+                                    }
+                                    if (searchBox.text && detailsPanel.hideFiltered) {
+                                        detailsPanel.hideFiltered = false
+                                        return
+                                    }
+                                    collapse(true)
                                 }
-                                else 
-                                {
-                                    collapse.start()
-                                }
-                                parent.collapsed = !parent.collapsed;
                             }
                         }
                     }
 
                     ParallelAnimation {
-                        id: expand
+                        id: expandAnimation
                         running: false
 
                         property int expandDuration: 200
@@ -479,7 +466,7 @@ Item {
                             easing.type: Easing.Linear
                             property: "height"
                             to: transactionsTable.rowHeight + txDetails.maximumHeight
-                            duration: expand.expandDuration
+                            duration: expandAnimation.expandDuration
                         }
 
                         NumberAnimation {
@@ -487,12 +474,14 @@ Item {
                             easing.type: Easing.Linear
                             property: "height"
                             to: txDetails.maximumHeight
-                            duration: expand.expandDuration
+                            duration: expandAnimation.expandDuration
                         }
+
+                        onStopped: rowItem.collapsed = false
                     }
 
                     ParallelAnimation {
-                        id: collapse
+                        id: collapseAnimation
                         running: false
 
                         property int collapseDuration: 200
@@ -502,7 +491,7 @@ Item {
                             easing.type: Easing.Linear
                             property: "height"
                             to: transactionsTable.rowHeight
-                            duration: collapse.collapseDuration
+                            duration: collapseAnimation.collapseDuration
                         }
 
                         NumberAnimation {
@@ -510,8 +499,10 @@ Item {
                             easing.type: Easing.Linear
                             property: "height"
                             to: 0
-                            duration: collapse.collapseDuration
+                            duration: collapseAnimation.collapseDuration
                         }
+
+                        onStopped: rowItem.collapsed = true
                     }
                 }
 
@@ -521,7 +512,7 @@ Item {
                         height: transactionsTable.rowHeight
 
                         TableItem {
-                            text: styleData.value
+                            text:  styleData.value
                             elide: styleData.elideMode
                             onCopyText: BeamGlobals.copyToClipboard(styleData.value)
                         }
@@ -647,7 +638,7 @@ Item {
                                     font.pixelSize: 14
                                     font.italic: true
                                     wrapMode: Text.WordWrap
-                                    text: getStatusText(styleData.value)
+                                    text: styleData.value
                                     verticalAlignment: Text.AlignBottom
                                     color: {
                                         if (!model || model.isExpired) {
@@ -781,37 +772,6 @@ Item {
         if (root.toSend) {
             sendButton.clicked();
             root.toSend = false;
-        }
-    }
-
-    function getStatusText(value) {
-        switch(value) {
-            //% "pending"
-            case "pending": return qsTrId("wallet-txs-status-pending");
-            //% "waiting for sender"
-            case "waiting for sender": return qsTrId("wallet-txs-status-waiting-sender");
-            //% "waiting for receiver"
-            case "waiting for receiver": return qsTrId("wallet-txs-status-waiting-receiver");
-            //% "in progress"
-            case "receiving": return qsTrId("wallet-txs-status-in-progress");
-            //% "in progress"
-            case "sending": return qsTrId("wallet-txs-status-in-progress");
-            //% "sent to own address"
-            case "completed": return qsTrId("wallet-txs-status-own-sent");
-            //% "sending to own address"
-            case "self sending": return qsTrId("wallet-txs-status-own-sending");
-            //% "received"
-            case "received": return qsTrId("wallet-txs-status-received");
-            //% "sent"
-            case "sent": return qsTrId("wallet-txs-status-sent");
-            //% "cancelled"
-            case "cancelled": return qsTrId("wallet-txs-status-cancelled");
-            //% "expired"
-            case "expired": return qsTrId("wallet-txs-status-expired");
-            //% "failed"
-            case "failed": return qsTrId("wallet-txs-status-failed");
-            //% "unknown"
-            default: return qsTrId("wallet-txs-status-unknown");
         }
     }
 }

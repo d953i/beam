@@ -27,16 +27,16 @@ class SwapCoinClientModel;
 class ElectrumPhraseItem : public QObject
 {
     Q_OBJECT
-        Q_PROPERTY(bool    isCorrect READ isCorrect                NOTIFY isCorrectChanged)
-        Q_PROPERTY(bool    isAllowed READ isAllowed                NOTIFY isAllowedChanged)
-        Q_PROPERTY(QString value     READ getValue  WRITE setValue NOTIFY valueChanged)
-        Q_PROPERTY(QString phrase    READ getPhrase                CONSTANT)
-        Q_PROPERTY(int     index     READ getIndex                 CONSTANT)
+        Q_PROPERTY(bool    isModified READ isModified               NOTIFY isModifiedChanged)
+        Q_PROPERTY(bool    isAllowed  READ isAllowed                NOTIFY isAllowedChanged)
+        Q_PROPERTY(QString value      READ getValue  WRITE setValue NOTIFY valueChanged)
+        Q_PROPERTY(QString phrase     READ getPhrase                CONSTANT)
+        Q_PROPERTY(int     index      READ getIndex                 CONSTANT)
 public:
     ElectrumPhraseItem(int index, const QString& phrase);
 
     bool isAllowed() const;
-    bool isCorrect() const;
+    bool isModified() const;
     const QString& getValue() const;
     void setValue(const QString& value);
     const QString& getPhrase() const;
@@ -46,7 +46,7 @@ public:
     Q_INVOKABLE void revertChanges();
 
 signals:
-    void isCorrectChanged();
+    void isModifiedChanged();
     void isAllowedChanged();
     void valueChanged();
 
@@ -78,9 +78,11 @@ class SwapCoinSettingsItem : public QObject
 
     Q_PROPERTY(bool canEdit      READ getCanEdit                            NOTIFY canEditChanged)
 
-    Q_PROPERTY(bool isConnected  READ getIsConnected                        NOTIFY connectionTypeChanged)
-    Q_PROPERTY(bool isNodeConnection READ getIsNodeConnection               NOTIFY connectionTypeChanged)
-    Q_PROPERTY(bool isElectrumConnection READ getIsElectrumConnection       NOTIFY connectionTypeChanged)
+    // connection properties
+    Q_PROPERTY(bool isConnected             READ getIsConnected             NOTIFY connectionTypeChanged)
+    Q_PROPERTY(bool isNodeConnection        READ getIsNodeConnection        NOTIFY connectionTypeChanged)
+    Q_PROPERTY(bool isElectrumConnection    READ getIsElectrumConnection    NOTIFY connectionTypeChanged)
+    Q_PROPERTY(QString connectionStatus     READ getConnectionStatus        NOTIFY connectionStatusChanged)
 
 public:
     SwapCoinSettingsItem(SwapCoinClientModel& coinClient, beam::wallet::AtomicSwapCoin swapCoin);
@@ -113,6 +115,7 @@ public:
     bool getIsConnected() const;
     bool getIsNodeConnection() const;
     bool getIsElectrumConnection() const;
+    QString getConnectionStatus() const;
 
     Q_INVOKABLE void applyNodeSettings();
     Q_INVOKABLE void applyElectrumSettings();
@@ -145,6 +148,7 @@ signals:
 
     void canEditChanged();
     void connectionTypeChanged();
+    void connectionStatusChanged();
 
 private:
     QString getGeneralTitle() const;
@@ -167,7 +171,8 @@ private:
     boost::optional<beam::bitcoin::Settings> m_settings;
     int m_feeRate = 0;
 
-    beam::bitcoin::ISettings::ConnectionType m_connectionType = beam::bitcoin::ISettings::None;
+    beam::bitcoin::ISettings::ConnectionType
+        m_connectionType = beam::bitcoin::ISettings::ConnectionType::None;
     QString m_nodeUser;
     QString m_nodePass;
     QString m_nodeAddress;
@@ -182,23 +187,23 @@ class SettingsViewModel : public QObject
 {
     Q_OBJECT
 
-    Q_PROPERTY(QString nodeAddress READ getNodeAddress WRITE setNodeAddress NOTIFY nodeAddressChanged)
-    Q_PROPERTY(QString version READ getVersion CONSTANT)
-    Q_PROPERTY(bool localNodeRun READ getLocalNodeRun WRITE setLocalNodeRun NOTIFY localNodeRunChanged)
-    Q_PROPERTY(uint localNodePort READ getLocalNodePort WRITE setLocalNodePort NOTIFY localNodePortChanged)
-    Q_PROPERTY(bool isChanged READ isChanged NOTIFY propertiesChanged)
-    Q_PROPERTY(QStringList localNodePeers READ getLocalNodePeers NOTIFY localNodePeersChanged)
-    Q_PROPERTY(int lockTimeout READ getLockTimeout WRITE setLockTimeout NOTIFY lockTimeoutChanged)
-    Q_PROPERTY(QString walletLocation READ getWalletLocation CONSTANT)
-    Q_PROPERTY(bool isLocalNodeRunning READ isLocalNodeRunning NOTIFY localNodeRunningChanged)
-    Q_PROPERTY(bool isPasswordReqiredToSpendMoney READ isPasswordReqiredToSpendMoney WRITE setPasswordReqiredToSpendMoney NOTIFY passwordReqiredToSpendMoneyChanged)
-    Q_PROPERTY(bool isAllowedBeamMWLinks READ isAllowedBeamMWLinks WRITE allowBeamMWLinks NOTIFY beamMWLinksAllowed)
-    Q_PROPERTY(QStringList supportedLanguages READ getSupportedLanguages NOTIFY currentLanguageIndexChanged)
-    Q_PROPERTY(int currentLanguageIndex READ getCurrentLanguageIndex NOTIFY currentLanguageIndexChanged)
-    Q_PROPERTY(QString currentLanguage READ getCurrentLanguage WRITE setCurrentLanguage)
-    Q_PROPERTY(bool isValidNodeAddress READ isValidNodeAddress NOTIFY validNodeAddressChanged)
+    Q_PROPERTY(QString  nodeAddress     READ getNodeAddress     WRITE setNodeAddress    NOTIFY nodeAddressChanged)
+    Q_PROPERTY(QString  version         READ getVersion         CONSTANT)
+    Q_PROPERTY(bool     localNodeRun    READ getLocalNodeRun    WRITE setLocalNodeRun   NOTIFY localNodeRunChanged)
+    Q_PROPERTY(uint     localNodePort   READ getLocalNodePort   WRITE setLocalNodePort  NOTIFY localNodePortChanged)
+    Q_PROPERTY(bool     isChanged       READ isChanged          NOTIFY propertiesChanged)
+    Q_PROPERTY(QStringList  localNodePeers  READ getLocalNodePeers  NOTIFY localNodePeersChanged)
+    Q_PROPERTY(int      lockTimeout         READ getLockTimeout     WRITE setLockTimeout NOTIFY lockTimeoutChanged)
+    Q_PROPERTY(QString  walletLocation      READ getWalletLocation  CONSTANT)
+    Q_PROPERTY(bool     isLocalNodeRunning  READ isLocalNodeRunning NOTIFY localNodeRunningChanged)
+    Q_PROPERTY(bool     isPasswordReqiredToSpendMoney   READ isPasswordReqiredToSpendMoney WRITE setPasswordReqiredToSpendMoney NOTIFY passwordReqiredToSpendMoneyChanged)
+    Q_PROPERTY(bool     isAllowedBeamMWLinks    READ isAllowedBeamMWLinks       WRITE allowBeamMWLinks NOTIFY beamMWLinksAllowed)
+    Q_PROPERTY(QStringList  supportedLanguages  READ getSupportedLanguages      NOTIFY currentLanguageIndexChanged)
+    Q_PROPERTY(int      currentLanguageIndex    READ getCurrentLanguageIndex    NOTIFY currentLanguageIndexChanged)
+    Q_PROPERTY(QString  currentLanguage         READ getCurrentLanguage         WRITE setCurrentLanguage)
+    Q_PROPERTY(bool     isValidNodeAddress      READ isValidNodeAddress         NOTIFY validNodeAddressChanged)
 
-    Q_PROPERTY(QList<QObject*> swapCoinSettings READ getSwapCoinSettings CONSTANT)
+    Q_PROPERTY(QList<QObject*> swapCoinSettingsList     READ getSwapCoinSettings    CONSTANT)
 
 public:
 

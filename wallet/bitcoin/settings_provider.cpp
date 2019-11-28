@@ -21,18 +21,6 @@ namespace beam::bitcoin
     {
     }
 
-    BitcoinCoreSettings SettingsProvider::GetBitcoinCoreSettings() const
-    {
-        assert(m_settings);
-        return m_settings->GetConnectionOptions();
-    }
-
-    ElectrumSettings SettingsProvider::GetElectrumSettings() const
-    {
-        assert(m_settings);
-        return m_settings->GetElectrumConnectionOptions();
-    }
-
     Settings SettingsProvider::GetSettings() const
     {
         assert(m_settings);
@@ -55,25 +43,13 @@ namespace beam::bitcoin
 
             WriteToDb(GetElectrumAddressName(), electrumSettings.m_address);
             WriteToDb(GetSecretWordsName(), electrumSettings.m_secretWords);
-            WriteToDb(GetAddressVersionName(), electrumSettings.m_addressVersion);
         }
 
         WriteToDb(GetFeeRateName(), settings.GetFeeRate());
-        WriteToDb(GetMinFeeRateName(), settings.GetMinFeeRate());
-        WriteToDb(GetTxMinConfirmationsName(), settings.GetTxMinConfirmations());
-        WriteToDb(GetLockTimeInBlocksName(), settings.GetLockTimeInBlocks());
         WriteToDb(GetConnectrionTypeName(), settings.GetCurrentConnectionType());
 
         // update m_settings
         m_settings = std::make_unique<Settings>(settings);
-    }
-
-    void SettingsProvider::ResetSettings()
-    {
-        // remove from DB
-        m_walletDB->removeVarRaw(GetSettingsName().c_str());
-
-        m_settings = std::make_unique<Settings>(GetEmptySettings());
     }
 
     void SettingsProvider::Initialize()
@@ -96,7 +72,6 @@ namespace beam::bitcoin
 
                 ReadFromDB(GetElectrumAddressName(), settings.m_address);
                 ReadFromDB(GetSecretWordsName(), settings.m_secretWords);
-                ReadFromDB(GetAddressVersionName(), settings.m_addressVersion);
 
                 m_settings->SetElectrumConnectionOptions(settings);
             }
@@ -105,24 +80,6 @@ namespace beam::bitcoin
                 auto feeRate = m_settings->GetFeeRate();
                 ReadFromDB(GetFeeRateName(), feeRate);
                 m_settings->SetFeeRate(feeRate);
-            }
-
-            {
-                auto minFeeRate = m_settings->GetMinFeeRate();
-                ReadFromDB(GetMinFeeRateName(), minFeeRate);
-                m_settings->SetMinFeeRate(minFeeRate);
-            }
-
-            {
-                auto txMinConfirmations = m_settings->GetTxMinConfirmations();
-                ReadFromDB(GetTxMinConfirmationsName(), txMinConfirmations);
-                m_settings->SetTxMinConfirmations(txMinConfirmations);
-            }
-
-            {
-                auto lockTimeInBlocks = m_settings->GetLockTimeInBlocks();
-                ReadFromDB(GetLockTimeInBlocksName(), lockTimeInBlocks);
-                m_settings->SetLockTimeInBlocks(lockTimeInBlocks);
             }
 
             {
@@ -194,21 +151,6 @@ namespace beam::bitcoin
     std::string SettingsProvider::GetFeeRateName() const
     {
         return GetSettingsName() + "_FeeRate";
-    }
-
-    std::string SettingsProvider::GetMinFeeRateName() const
-    {
-        return GetSettingsName() + "_MinFeeRate";
-    }
-
-    std::string SettingsProvider::GetTxMinConfirmationsName() const
-    {
-        return GetSettingsName() + "_TxMinConfirmations";
-    }
-
-    std::string SettingsProvider::GetLockTimeInBlocksName() const
-    {
-        return GetSettingsName() + "_LockTimeInBlocks";
     }
 
     std::string SettingsProvider::GetConnectrionTypeName() const

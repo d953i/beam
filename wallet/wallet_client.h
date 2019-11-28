@@ -40,12 +40,12 @@ namespace beam::wallet
 
         struct
         {
-            Timestamp lastTime;
-            int done;
-            int total;
+            Timestamp lastTime = 0;
+            int done = 0;
+            int total = 0;
         } update;
 
-        Block::SystemState::ID stateID;
+        Block::SystemState::ID stateID = {};
     };
 
     class WalletClient
@@ -66,11 +66,17 @@ namespace beam::wallet
         std::string exportOwnerKey(const beam::SecString& pass) const;
         bool isRunning() const;
         bool isFork1() const;
+        size_t getUnsafeActiveTransactionsCount() const;
 
     protected:
         // Call this before derived class is destructed to ensure
         // that no virtual function calls below will result in purecall
         void stopReactor();
+
+        using MessageFunction = std::function<void()>;
+
+        // use this function to post function call to client's main loop
+        void postFunctionToClientContext(MessageFunction&& func);
 
         virtual void onStatus(const WalletStatus& status) = 0;
         virtual void onTxStatus(ChangeAction, const std::vector<TxDescription>& items) = 0;
@@ -80,6 +86,7 @@ namespace beam::wallet
         virtual void onAddresses(bool own, const std::vector<WalletAddress>& addresses) = 0;
         virtual void onSwapOffersChanged(ChangeAction action, const std::vector<SwapOffer>& offers) override = 0;
         virtual void onGeneratedNewAddress(const WalletAddress& walletAddr) = 0;
+        virtual void onSwapParamsLoaded(const beam::ByteBuffer& params) = 0;
         virtual void onNewAddressFailed() = 0;
         virtual void onChangeCurrentWalletIDs(WalletID senderID, WalletID receiverID) = 0;
         virtual void onNodeConnectionChanged(bool isNodeConnected) = 0;
@@ -92,6 +99,9 @@ namespace beam::wallet
         virtual void onAddressChecked(const std::string& addr, bool isValid) = 0;
         virtual void onImportRecoveryProgress(uint64_t done, uint64_t total) = 0;
         virtual void onNoDeviceConnected() = 0;
+        virtual void onImportDataFromJson(bool isOk) = 0;
+        virtual void onExportDataToJson(const std::string& data) = 0;
+        virtual void onPostFunctionToClientContext(MessageFunction&& func) = 0;
 
     private:
 
@@ -120,6 +130,8 @@ namespace beam::wallet
         void saveAddress(const WalletAddress& address, bool bOwn) override;
         void changeCurrentWalletIDs(const WalletID& senderID, const WalletID& receiverID) override;
         void generateNewAddress() override;
+        void loadSwapParams() override;
+        void storeSwapParams(const beam::ByteBuffer& params) override;
         void deleteAddress(const WalletID& id) override;
         void updateAddress(const WalletID& id, const std::string& name, WalletAddress::ExpirationStatus status) override;
         void setNodeAddress(const std::string& addr) override;
@@ -129,6 +141,8 @@ namespace beam::wallet
         void exportPaymentProof(const TxID& id) override;
         void checkAddress(const std::string& addr) override;
         void importRecovery(const std::string& path) override;
+        void importDataFromJson(const std::string& data) override;
+        void exportDataToJson() override;
 
         // implement IWalletDB::IRecoveryProgress
         bool OnProgress(uint64_t done, uint64_t total) override;
@@ -138,7 +152,8 @@ namespace beam::wallet
 
         void nodeConnectionFailed(const proto::NodeConnection::DisconnectReason&);
         void nodeConnectedStatusChanged(bool isNodeConnected);
-
+        void updateClientState();
+        void updateClientTxState();
     private:
         std::shared_ptr<std::thread> m_thread;
         IWalletDB::Ptr m_walletDB;
@@ -154,5 +169,7 @@ namespace beam::wallet
         boost::optional<ErrorType> m_walletError;
         std::string m_nodeAddrStr;
         IPrivateKeyKeeper::Ptr m_keyKeeper;
+        size_t m_unsafeActiveTxCount = 0;
+        beam::Height m_currentHeight = 0;
     };
 }

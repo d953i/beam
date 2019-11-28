@@ -44,8 +44,6 @@ namespace beam::bitcoin
 
         virtual ~IBridge() {};
 
-        // error, private key
-        virtual void dumpPrivKey(const std::string& btcAddress, std::function<void(const Error&, const std::string&)> callback) = 0;
         // error, transaction (hex), changepos
         virtual void fundRawTransaction(const std::string& rawTx, Amount feeRate, std::function<void(const Error&, const std::string&, int)> callback) = 0;
         //error, transaction (hex), complete
@@ -63,7 +61,7 @@ namespace beam::bitcoin
             Timestamp locktime,
             std::function<void(const Error&, const std::string&)> callback) = 0;
         // error, value, script (hex), confirmations
-        virtual void getTxOut(const std::string& txid, int outputIndex, std::function<void(const Error&, const std::string&, double, uint32_t)> callback) = 0;
+        virtual void getTxOut(const std::string& txid, int outputIndex, std::function<void(const Error&, const std::string&, Amount, uint32_t)> callback) = 0;
         // error, block count
         virtual void getBlockCount(std::function<void(const Error&, uint64_t)> callback) = 0;
         // error, balance

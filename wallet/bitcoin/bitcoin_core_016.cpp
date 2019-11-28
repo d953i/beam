@@ -17,6 +17,7 @@
 #include "bitcoin/bitcoin.hpp"
 #include "nlohmann/json.hpp"
 #include "utility/logger.h"
+#include "common.h"
 
 using json = nlohmann::json;
 
@@ -37,34 +38,10 @@ namespace beam::bitcoin
         };
     }
 
-    BitcoinCore016::BitcoinCore016(io::Reactor& reactor, IBitcoinCoreSettingsProvider& settingsProvider)
+    BitcoinCore016::BitcoinCore016(io::Reactor& reactor, ISettingsProvider& settingsProvider)
         : m_httpClient(reactor)
         , m_settingsProvider(settingsProvider)
     {
-    }
-
-    void BitcoinCore016::dumpPrivKey(const std::string& btcAddress, std::function<void(const IBridge::Error&, const std::string&)> callback)
-    {
-        LOG_DEBUG() << "Send dumpPrivKey command";
-
-        sendRequest("dumpprivkey", "\"" + btcAddress + "\"", [callback] (IBridge::Error error, const json& result){
-            std::string privKey;
-
-            if (error.m_type == IBridge::None)
-            {
-                try
-                {
-                    privKey = result.get<std::string>();
-                }
-                catch (const std::exception& ex)
-                {
-                    error.m_type = IBridge::InvalidResultFormat;
-                    error.m_message = ex.what();
-                }
-            }
-
-            callback(error, privKey);
-        });
     }
 
     void BitcoinCore016::fundRawTransaction(const std::string& rawTx, Amount feeRate, std::function<void(const IBridge::Error&, const std::string&, int)> callback)
@@ -74,7 +51,7 @@ namespace beam::bitcoin
         std::string params = "\"" + rawTx + "\"";
         if (feeRate)
         {
-            params += ", {\"feeRate\": " + std::to_string(double(feeRate) / libbitcoin::satoshi_per_bitcoin) + "}";
+            params += ", {\"feeRate\": " + libbitcoin::satoshi_to_btc(feeRate) + "}";
         }
 
         sendRequest("fundrawtransaction", params, [callback](IBridge::Error error, const json& result) {
@@ -185,7 +162,7 @@ namespace beam::bitcoin
 
         std::string args("[{\"txid\": \"" + contractTxId + "\", \"vout\":" + std::to_string(outputIndex) + ", \"Sequence\": " + std::to_string(libbitcoin::max_input_sequence - 1) + " }]");
 
-        args += ",{\"" + withdrawAddress + "\": " + std::to_string(double(amount) / libbitcoin::satoshi_per_bitcoin) + "}";
+        args += ",{\"" + withdrawAddress + "\": " + libbitcoin::satoshi_to_btc(amount) + "}";
         if (locktime)
         {
             args += "," + std::to_string(locktime);
@@ -211,12 +188,12 @@ namespace beam::bitcoin
         });
     }
 
-    void BitcoinCore016::getTxOut(const std::string& txid, int outputIndex, std::function<void(const IBridge::Error&, const std::string&, double, uint32_t)> callback)
+    void BitcoinCore016::getTxOut(const std::string& txid, int outputIndex, std::function<void(const IBridge::Error&, const std::string&, Amount, uint32_t)> callback)
     {
         LOG_DEBUG() << "Send getTxOut command";
 
         sendRequest("gettxout", "\"" + txid + "\"" + "," + std::to_string(outputIndex), [callback](IBridge::Error error, const json& result) {
-            double value = 0;
+            Amount value = 0;
             uint16_t confirmations = 0;
             std::string scriptHex;
 
@@ -231,7 +208,8 @@ namespace beam::bitcoin
                 try
                 {
                     scriptHex = result["scriptPubKey"]["hex"].get<std::string>();
-                    value = result["value"].get<double>();
+                    // TODO should avoid using of double type
+                    value = btc_to_satoshi(result["value"].get<double>());
                     confirmations = result["confirmations"];
                 }
                 catch (const std::exception& ex)
@@ -284,8 +262,8 @@ namespace beam::bitcoin
             {
                 try
                 {
-                    // TODO should be avoided to use conversion to double and vice versa
-                    libbitcoin::btc_to_satoshi(balance, result.dump());
+                    // TODO should avoid using of double type
+                    balance = btc_to_satoshi(result.get<double>());
                 }
                 catch (const std::exception& ex)
                 {
@@ -309,10 +287,10 @@ namespace beam::bitcoin
             {
                 try
                 {
-                    // TODO should be avoided to use conversion to double and vice versa
-                    libbitcoin::btc_to_satoshi(confirmed, result["balance"].dump());
-                    libbitcoin::btc_to_satoshi(unconfirmed, result["unconfirmed_balance"].dump());
-                    libbitcoin::btc_to_satoshi(immature, result["immature_balance"].dump());
+                    // TODO should avoid using of double type
+                    confirmed = btc_to_satoshi(result["balance"].get<double>());
+                    unconfirmed = btc_to_satoshi(result["unconfirmed_balance"].get<double>());
+                    immature = btc_to_satoshi(result["immature_balance"].get<double>());
                 }
                 catch (const std::exception& ex)
                 {
@@ -332,7 +310,7 @@ namespace beam::bitcoin
     void BitcoinCore016::sendRequest(const std::string& method, const std::string& params, std::function<void(const Error&, const json&)> callback)
     {
         const std::string content(R"({"method":")" + method + R"(","params":[)" + params + "]}");
-        auto settings = m_settingsProvider.GetBitcoinCoreSettings();
+        auto settings = m_settingsProvider.GetSettings().GetConnectionOptions();
         const std::string authorization(settings.generateAuthorization());
         const HeaderPair headers[] = {
             {"Authorization", authorization.data()}

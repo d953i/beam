@@ -7,7 +7,7 @@ import "."
 
 T.TextField {
     id: control
-    property var onPaste: function() {}
+    signal textPasted()
 
     function getMousePos() {
         return {x: mouseArea.mouseX, y: mouseArea.mouseY}
@@ -33,6 +33,7 @@ T.TextField {
     selectedTextColor: control.palette.highlightedText
     verticalAlignment: TextInput.AlignVCenter
 
+    property bool  focusablePlaceholder: false
     property alias backgroundColor : backgroundRect.color
     property alias underlineVisible : backgroundRect.visible
     backgroundColor: Style.content_main
@@ -52,7 +53,7 @@ T.TextField {
         color: control.color
         verticalAlignment: control.verticalAlignment
         horizontalAlignment: control.horizontalAlignment
-        visible:  !control.activeFocus && !control.length && !control.preeditText
+        visible:  (focusablePlaceholder || !control.activeFocus) && !control.length && !control.preeditText
         elide: Text.ElideRight
         wrapMode: control.wrapMode
     }
@@ -106,8 +107,8 @@ T.TextField {
             icon.source: "qrc:/assets/icon-edit.svg"
             enabled: control.canPaste
             onTriggered: {
-                control.onPaste();
-                control.paste();
+                control.paste()
+                control.textPasted()
             }
         }
 
@@ -134,9 +135,12 @@ T.TextField {
         }
     }
 
-    Keys.onPressed: function(keyEvent) {
-        if (keyEvent.matches(StandardKey.Paste)) {
-            control.onPaste();
+    Keys.onShortcutOverride: event.accepted = event.matches(StandardKey.Paste)
+    Keys.onPressed: {
+        if (event.matches(StandardKey.Paste)) {
+            event.accepted = true
+            control.paste()
+            control.textPasted()
         }
     }
 }

@@ -25,6 +25,7 @@ auto SwapTxObjectList::roleNames() const -> QHash<int, QByteArray>
         { static_cast<int>(Roles::TimeCreated), "timeCreated" },
         { static_cast<int>(Roles::TimeCreatedSort), "timeCreatedSort" },
         { static_cast<int>(Roles::AmountGeneralWithCurrency), "amountGeneralWithCurrency" },
+        { static_cast<int>(Roles::AmountGeneralWithCurrencySort), "amountGeneralWithCurrencySort" },
         { static_cast<int>(Roles::AmountGeneral), "amountGeneral" },
         { static_cast<int>(Roles::AmountGeneralSort), "amountGeneralSort" },
         { static_cast<int>(Roles::AddressFrom), "addressFrom" },
@@ -56,9 +57,11 @@ auto SwapTxObjectList::roleNames() const -> QHash<int, QByteArray>
         { static_cast<int>(Roles::IsLockTxProofReceived), "isLockTxProofReceived" },
         { static_cast<int>(Roles::IsRefundTxProofReceived), "isRefundTxProofReceived" },
         { static_cast<int>(Roles::AmountSendWithCurrency), "amountSendWithCurrency" },
+        { static_cast<int>(Roles::AmountSendWithCurrencySort), "amountSendWithCurrencySort" },
         { static_cast<int>(Roles::AmountSend), "amountSend" },
         { static_cast<int>(Roles::AmountSendSort), "amountSendSort" },
         { static_cast<int>(Roles::AmountReceiveWithCurrency), "amountReceiveWithCurrency" },
+        { static_cast<int>(Roles::AmountReceiveWithCurrencySort), "amountReceiveWithCurrencySort" },
         { static_cast<int>(Roles::AmountReceive), "amountReceive" },
         { static_cast<int>(Roles::AmountReceiveSort), "amountReceiveSort" },
         { static_cast<int>(Roles::Token), "token" },
@@ -72,7 +75,8 @@ auto SwapTxObjectList::roleNames() const -> QHash<int, QByteArray>
         { static_cast<int>(Roles::SwapCoinRefundTxConfirmations), "swapCoinRefundTxConfirmations" },
         { static_cast<int>(Roles::BeamLockTxKernelId), "beamLockTxKernelId" },
         { static_cast<int>(Roles::BeamRedeemTxKernelId), "beamRedeemTxKernelId" },
-        { static_cast<int>(Roles::BeamRefundTxKernelId), "beamRefundTxKernelId" }
+        { static_cast<int>(Roles::BeamRefundTxKernelId), "beamRefundTxKernelId" },
+        { static_cast<int>(Roles::SwapState), "swapState" }
     };
     return roles;
 }
@@ -95,13 +99,13 @@ auto SwapTxObjectList::data(const QModelIndex &index, int role) const -> QVarian
         }
         case Roles::TimeCreatedSort:
         {
-            QDateTime datetime;
-            datetime.setTime_t(value->timeCreated());
-            return datetime;
+            return static_cast<qulonglong>(value->timeCreated());
         }
 
         case Roles::AmountGeneralWithCurrency:
             return value->getAmountWithCurrency();
+        case Roles::AmountGeneralWithCurrencySort:
+            return static_cast<qulonglong>(value->getAmountValue());
         case Roles::AmountGeneral:
             return value->getAmount();
         case Roles::AmountGeneralSort:
@@ -197,6 +201,10 @@ auto SwapTxObjectList::data(const QModelIndex &index, int role) const -> QVarian
             
         case Roles::AmountSendWithCurrency:
             return value->getSentAmountWithCurrency();
+        case Roles::AmountSendWithCurrencySort:
+            return value->isBeamSideSwap()
+                ? static_cast<qulonglong>(value->getSentAmountValue())
+                : static_cast<qulonglong>(value->getReceivedAmountValue());
         case Roles::AmountSend:
             return value->getSentAmount();
         case Roles::AmountSendSort:
@@ -204,6 +212,10 @@ auto SwapTxObjectList::data(const QModelIndex &index, int role) const -> QVarian
 
         case Roles::AmountReceiveWithCurrency:
             return value->getReceivedAmountWithCurrency();
+        case Roles::AmountReceiveWithCurrencySort:
+            return value->isBeamSideSwap()
+                    ? static_cast<qulonglong>(value->getSentAmountValue())
+                    : static_cast<qulonglong>(value->getReceivedAmountValue());
         case Roles::AmountReceive:
             return value->getReceivedAmount();
         case Roles::AmountReceiveSort:
@@ -244,6 +256,9 @@ auto SwapTxObjectList::data(const QModelIndex &index, int role) const -> QVarian
 
         case Roles::BeamRefundTxKernelId:
             return value->getBeamRefundTxKernelId();
+
+        case Roles::SwapState:
+            return value->getSwapState();
 
         default:
             return QVariant();
