@@ -173,16 +173,15 @@ namespace beam::wallet
             && peerEstCurrentHeight <= height + kExternalHeightMaxDifference;
     }
 
-    void BitcoinSide::AddTxDetails(SetTxParameter& txParameters)
+    void BitcoinSide::AddTxDetails(TxParameters& txParameters)
     {
         auto txID = m_tx.GetMandatoryParameter<std::string>(TxParameterID::AtomicSwapExternalTxID, SubTxIndex::LOCK_TX);
         uint32_t outputIndex = m_tx.GetMandatoryParameter<uint32_t>(TxParameterID::AtomicSwapExternalTxOutputIndex, SubTxIndex::LOCK_TX);
         std::string swapPublicKeyStr = m_tx.GetMandatoryParameter<std::string>(TxParameterID::AtomicSwapPublicKey);
 
-        txParameters.AddParameter(TxParameterID::AtomicSwapPeerPublicKey, swapPublicKeyStr)
-            .AddParameter(TxParameterID::SubTxIndex, SubTxIndex::LOCK_TX)
-            .AddParameter(TxParameterID::AtomicSwapExternalTxID, txID)
-            .AddParameter(TxParameterID::AtomicSwapExternalTxOutputIndex, outputIndex);
+        txParameters.SetParameter(TxParameterID::AtomicSwapPeerPublicKey, swapPublicKeyStr)
+            .SetParameter(TxParameterID::AtomicSwapExternalTxID, txID, SubTxIndex::LOCK_TX)
+            .SetParameter(TxParameterID::AtomicSwapExternalTxOutputIndex, outputIndex, SubTxIndex::LOCK_TX);
     }
 
     bool BitcoinSide::ConfirmLockTx()

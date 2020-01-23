@@ -169,7 +169,7 @@ namespace beam::wallet
 
         virtual void OnFailed(TxFailureReason reason, bool notify = false);
 
-        bool SendTxParameters(SetTxParameter&& msg) const;
+        bool SendTxParameters(TxParameters&& parameters) const;
         virtual void UpdateImpl() = 0;
 
         virtual bool ShouldNotifyAboutChanges(TxParameterID paramID) const { return true; };

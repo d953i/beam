@@ -501,7 +501,7 @@ namespace beam::wallet
                     m_Tx.SetParameter(TxParameterID::Offset, m_Offset, m_SubTxID);
                     if (addressID)
                     {
-                        m_Tx.SetParameter(TxParameterID::PaymentConfirmation, signature.m_PaymentProofSignature);
+                        m_Tx.SetParameter(TxParameterID::PaymentConfirmation, signature.m_PaymentProofSignature, m_SubTxID);
                     }
                     StoreKernelID();
                 }, __LINE__);

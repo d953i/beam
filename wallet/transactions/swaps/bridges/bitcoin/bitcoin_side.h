@@ -33,7 +33,7 @@ namespace beam::wallet
         bool Initialize() override;
         bool InitLockTime() override;
         bool ValidateLockTime() override;
-        void AddTxDetails(SetTxParameter& txParameters) override;
+        void AddTxDetails(TxParameters& txParameters) override;
         bool ConfirmLockTx() override;
         bool ConfirmRefundTx() override;
         bool ConfirmRedeemTx() override;

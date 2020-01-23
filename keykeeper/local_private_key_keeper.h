@@ -96,7 +96,7 @@ namespace beam::wallet
         Key::IKdf::Ptr GetChildKdf(const CoinID&) const;
         ECC::Scalar::Native GetNonce(size_t slot);
         ECC::Scalar::Native GetExcess(const std::vector<CoinID>& inputs, const std::vector<CoinID>& outputs, const ECC::Scalar::Native& offset) const;
-        int64_t CalculateValue(const std::vector<CoinID>& inputs, const std::vector<CoinID>& outputs) const;
+        int64_t CalculateValue(const std::vector<CoinID>& inputs, const std::vector<CoinID>& outputs, bool ignoreRegOutputs = false) const;
         void LoadNonceSeeds();
         void SaveNonceSeeds();
 

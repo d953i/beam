@@ -18,7 +18,7 @@
 
 namespace beam::wallet
 {
-    struct SetTxParameter;
+    class TxParameters;
 
     class SecondSide
     {
@@ -30,7 +30,7 @@ namespace beam::wallet
         virtual bool Initialize() = 0;
         virtual bool InitLockTime() = 0;
         virtual bool ValidateLockTime() = 0;
-        virtual void AddTxDetails(SetTxParameter&) = 0;
+        virtual void AddTxDetails(TxParameters&) = 0;
         virtual bool ConfirmLockTx() = 0;
         virtual bool ConfirmRefundTx() = 0;
         virtual bool ConfirmRedeemTx() = 0;

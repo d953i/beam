@@ -173,7 +173,7 @@ namespace beam::wallet
         }
         else if (value >= 0)
         {
-            throw KeyKeeperException("Receover failed to sign tx. We are not receiving");
+            throw KeyKeeperException("Receiver failed to sign tx. We are not receiving");
         }
        
         auto excess = GetExcess(inputs, outputs, Zero);
@@ -265,11 +265,11 @@ namespace beam::wallet
                                                     , bool initial)
     {
         SenderSignature res;
-        auto value = CalculateValue(inputs, outputs);
+        auto value = CalculateValue(inputs, outputs, true);
 
         value -= kernelParameters.fee;
 
-        if (value < 0)
+        if (value <= 0)
         {
             throw KeyKeeperException("Sender failed to sign tx. We are not sending");
         }
@@ -448,13 +448,16 @@ namespace beam::wallet
         return excess;
     }
 
-    int64_t LocalPrivateKeyKeeper::CalculateValue(const std::vector<CoinID>& inputs, const std::vector<CoinID>& outputs) const
+    int64_t LocalPrivateKeyKeeper::CalculateValue(const std::vector<CoinID>& inputs, const std::vector<CoinID>& outputs, bool ignoreRegOutputs) const
     {
         // TODO: sum different assets separately!
 
         int64_t value = 0;
         for (const auto& coinID : outputs)
         {
+            if (ignoreRegOutputs && coinID.m_Type == Key::Type::Regular) // hack for shared utxo 
+                continue;
+
             value += coinID.m_Value;
         }
 

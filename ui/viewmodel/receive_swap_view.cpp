@@ -481,6 +481,7 @@ void ReceiveSwapViewModel::updateTransactionToken()
     _txParameters.SetParameter(beam::wallet::TxParameterID::AtomicSwapCoin, swapCoin);
     _txParameters.SetParameter(beam::wallet::TxParameterID::AtomicSwapAmount, swapAmount);
     _txParameters.SetParameter(beam::wallet::TxParameterID::PeerID, _receiverAddress.m_walletID);
+    _txParameters.SetParameter(beam::wallet::TxParameterID::PeerSecureWalletID, _receiverAddress.m_Identity);
     _txParameters.SetParameter(beam::wallet::TxParameterID::IsSender, _isBeamSide);
 
     setTransactionToken(QString::fromStdString(std::to_string(_txParameters)));

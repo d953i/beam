@@ -147,6 +147,21 @@ namespace beam::wallet
                 return;
             }
 
+            uint64_t nAddrOwnID;
+            if (!GetParameter(TxParameterID::MyAddressID, nAddrOwnID))
+            {
+                WalletID wid;
+                if (GetParameter(TxParameterID::MyID, wid))
+                {
+                    auto waddr = m_WalletDB->getAddress(wid);
+                    if (waddr && waddr->isOwn())
+                    {
+                        SetParameter(TxParameterID::MyAddressID, waddr->m_OwnID);
+                        SetParameter(TxParameterID::MySecureWalletID, waddr->m_Identity);
+                    }
+                }
+            }
+
             UpdateImpl();
 
             CheckExpired();
@@ -342,9 +357,9 @@ namespace beam::wallet
             return;
         }
 
-        SetTxParameter msg;
-        msg.AddParameter(TxParameterID::FailureReason, reason);
-        SendTxParameters(move(msg));
+        TxParameters params;
+        params.SetParameter(TxParameterID::FailureReason, reason);
+        SendTxParameters(move(params));
     }
 
     IWalletDB::Ptr BaseTransaction::GetWalletDB()
@@ -362,11 +377,9 @@ namespace beam::wallet
         return GetGateway();
     }
 
-    bool BaseTransaction::SendTxParameters(SetTxParameter && msg) const
+    bool BaseTransaction::SendTxParameters(TxParameters&& parameters) const
     {
-        msg.m_TxID = GetTxID();
-        msg.m_Type = GetType();
-
+        SetTxParameter msg;
         WalletID peerID;
         if (GetParameter(TxParameterID::MyID, msg.m_From)
             && GetParameter(TxParameterID::PeerID, peerID))
@@ -375,8 +388,13 @@ namespace beam::wallet
             if (GetParameter(TxParameterID::MySecureWalletID, secureWalletID) 
              && GetParameter(TxParameterID::PeerSecureWalletID, peerWalletID))
             {
-                msg.AddParameter(TxParameterID::PeerSecureWalletID, secureWalletID);
+                parameters.SetParameter(TxParameterID::PeerSecureWalletID, secureWalletID);
             }
+
+            msg.m_TxID = GetTxID();
+            msg.m_Type = GetType();
+            msg.m_Parameters = parameters.Pack();
+
             GetGateway().send_tx_params(peerID, msg);
             return true;
         }

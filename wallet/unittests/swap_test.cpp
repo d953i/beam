@@ -82,6 +82,10 @@ namespace
         TxParameters parameters = initialParameters;
 
         parameters.SetParameter(TxParameterID::PeerID, *parameters.GetParameter<WalletID>(TxParameterID::MyID));
+        if (auto p = parameters.GetParameter<PeerID>(TxParameterID::MySecureWalletID))
+        {
+            parameters.SetParameter(TxParameterID::PeerSecureWalletID, *p);
+        }
         parameters.SetParameter(TxParameterID::MyID, myID);
 
         bool isBeamSide = !*parameters.GetParameter<bool>(TxParameterID::AtomicSwapIsBeamSide);

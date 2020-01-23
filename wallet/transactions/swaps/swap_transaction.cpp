@@ -45,6 +45,7 @@ namespace beam::wallet
             case TxParameterID::AtomicSwapPeerPublicKey:
             case TxParameterID::FailureReason:
             case TxParameterID::AtomicSwapPeerPrivateKey:
+            case TxParameterID::PeerSecureWalletID:
                 return true;
             default:
                 return false;
@@ -68,6 +69,7 @@ namespace beam::wallet
             case TxParameterID::PeerPublicExcess:
             case TxParameterID::PeerSharedBulletProofPart2:
             case TxParameterID::PeerPublicSharedBlindingFactor:
+            case TxParameterID::PaymentConfirmation:
                 return true;
             default:
                 return false;
@@ -93,6 +95,7 @@ namespace beam::wallet
             case TxParameterID::PeerPublicExcess:
             case TxParameterID::PeerPublicNonce:
             case TxParameterID::PeerSignature:
+            case TxParameterID::PaymentConfirmation:
                 return true;
             default:
                 return false;
@@ -737,8 +740,8 @@ namespace beam::wallet
 
     void AtomicSwapTransaction::NotifyFailure(TxFailureReason reason)
     {
-        SetTxParameter msg;
-        msg.AddParameter(TxParameterID::FailureReason, reason);
+        TxParameters params;
+        params.SetParameter(TxParameterID::FailureReason, reason);
 
         if (IsBeamSide())
         {
@@ -759,7 +762,7 @@ namespace beam::wallet
                     LOG_DEBUG() << GetTxID() << " send additional info for quick refund";
 
                     // send our private key of redeem tx. we are good :)
-                    msg.AddParameter(TxParameterID::AtomicSwapPeerPrivateKey, secretPrivateKey.V);
+                    params.SetParameter(TxParameterID::AtomicSwapPeerPrivateKey, secretPrivateKey.V);
                 }
                 break;
             }            
@@ -767,7 +770,7 @@ namespace beam::wallet
                 break;
             }
         }
-        SendTxParameters(std::move(msg));
+        SendTxParameters(std::move(params));
     }
 
     void AtomicSwapTransaction::OnFailed(TxFailureReason reason, bool notify)
@@ -1255,11 +1258,10 @@ namespace beam::wallet
                 GetParameter(TxParameterID::AtomicSwapSecretPrivateKey, secretPrivateKey.m_Value, SubTxIndex::BEAM_REDEEM_TX);
                 partialSign += secretPrivateKey;
 
-                SetTxParameter msg;
-                msg.AddParameter(TxParameterID::SubTxIndex, builder->GetSubTxID())
-                    .AddParameter(TxParameterID::PeerSignature, partialSign);
+                TxParameters params;
+                params.SetParameter(TxParameterID::PeerSignature, partialSign, builder->GetSubTxID());
 
-                if (!SendTxParameters(std::move(msg)))
+                if (!SendTxParameters(std::move(params)))
                 {
                     OnFailed(TxFailureReason::FailedToSendParameters, false);
                     return subTxState;
@@ -1427,14 +1429,13 @@ namespace beam::wallet
         Height beamLockTxMinHeight = GetMandatoryParameter<Height>(TxParameterID::MinHeight, SubTxIndex::BEAM_LOCK_TX);
 
         // send invitation
-        SetTxParameter msg;
-        msg.AddParameter(TxParameterID::PeerProtoVersion, s_ProtoVersion)
-            .AddParameter(TxParameterID::AtomicSwapPeerPublicKey, swapPublicKey)
-            .AddParameter(TxParameterID::AtomicSwapExternalLockTime, swapLockTime)
-            .AddParameter(TxParameterID::SubTxIndex, SubTxIndex::BEAM_LOCK_TX)
-            .AddParameter(TxParameterID::MinHeight, beamLockTxMinHeight);
+        TxParameters params;
+        params.SetParameter(TxParameterID::PeerProtoVersion, s_ProtoVersion)
+            .SetParameter(TxParameterID::AtomicSwapPeerPublicKey, swapPublicKey)
+            .SetParameter(TxParameterID::AtomicSwapExternalLockTime, swapLockTime)
+            .SetParameter(TxParameterID::MinHeight, beamLockTxMinHeight, SubTxIndex::BEAM_LOCK_TX);
 
-        if (!SendTxParameters(std::move(msg)))
+        if (!SendTxParameters(std::move(params)))
         {
             OnFailed(TxFailureReason::FailedToSendParameters, false);
         }
@@ -1442,10 +1443,10 @@ namespace beam::wallet
 
     void AtomicSwapTransaction::SendExternalTxDetails()
     {
-        SetTxParameter msg;
-        m_secondSide->AddTxDetails(msg);
+        TxParameters params;
+        m_secondSide->AddTxDetails(params);
 
-        if (!SendTxParameters(std::move(msg)))
+        if (!SendTxParameters(std::move(params)))
         {
             OnFailed(TxFailureReason::FailedToSendParameters, false);
         }
@@ -1455,17 +1456,17 @@ namespace beam::wallet
     {
         auto swapPublicKey = GetMandatoryParameter<std::string>(TxParameterID::AtomicSwapPublicKey);
 
-        SetTxParameter msg;
-        msg.AddParameter(TxParameterID::PeerProtoVersion, s_ProtoVersion)
-            .AddParameter(TxParameterID::AtomicSwapPeerPublicKey, swapPublicKey)
-            .AddParameter(TxParameterID::SubTxIndex, SubTxIndex::BEAM_LOCK_TX)
-            .AddParameter(TxParameterID::Fee, lockBuilder.GetFee())
-            .AddParameter(TxParameterID::PeerPublicExcess, lockBuilder.GetPublicExcess())
-            .AddParameter(TxParameterID::PeerPublicNonce, lockBuilder.GetPublicNonce())
-            .AddParameter(TxParameterID::PeerSharedBulletProofPart2, lockBuilder.GetRangeProofInitialPart2())
-            .AddParameter(TxParameterID::PeerPublicSharedBlindingFactor, lockBuilder.GetPublicSharedBlindingFactor());
+        const auto subTxID = SubTxIndex::BEAM_LOCK_TX;
+        TxParameters params;
+        params.SetParameter(TxParameterID::PeerProtoVersion, s_ProtoVersion)
+            .SetParameter(TxParameterID::AtomicSwapPeerPublicKey, swapPublicKey)
+            .SetParameter(TxParameterID::Fee, lockBuilder.GetFee(), subTxID)
+            .SetParameter(TxParameterID::PeerPublicExcess, lockBuilder.GetPublicExcess(), subTxID)
+            .SetParameter(TxParameterID::PeerPublicNonce, lockBuilder.GetPublicNonce(), subTxID)
+            .SetParameter(TxParameterID::PeerSharedBulletProofPart2, lockBuilder.GetRangeProofInitialPart2(), subTxID)
+            .SetParameter(TxParameterID::PeerPublicSharedBlindingFactor, lockBuilder.GetPublicSharedBlindingFactor(), subTxID);
 
-        if (!SendTxParameters(std::move(msg)))
+        if (!SendTxParameters(std::move(params)))
         {
             OnFailed(TxFailureReason::FailedToSendParameters, false);
         }
@@ -1474,19 +1475,24 @@ namespace beam::wallet
     void AtomicSwapTransaction::SendLockTxConfirmation(const LockTxBuilder& lockBuilder)
     {
         auto bulletProof = lockBuilder.GetSharedProof();
+        const auto subTxID = SubTxIndex::BEAM_LOCK_TX;
+        TxParameters params;
+        params.SetParameter(TxParameterID::PeerProtoVersion, s_ProtoVersion)
+            .SetParameter(TxParameterID::PeerPublicExcess, lockBuilder.GetPublicExcess(), subTxID)
+            .SetParameter(TxParameterID::PeerPublicNonce, lockBuilder.GetPublicNonce(), subTxID)
+            .SetParameter(TxParameterID::PeerSignature, lockBuilder.GetPartialSignature(), subTxID)
+            .SetParameter(TxParameterID::PeerOffset, lockBuilder.GetOffset(), subTxID)
+            .SetParameter(TxParameterID::PeerSharedBulletProofPart2, lockBuilder.GetRangeProofInitialPart2(), subTxID)
+            .SetParameter(TxParameterID::PeerSharedBulletProofPart3, bulletProof.m_Part3, subTxID)
+            .SetParameter(TxParameterID::PeerPublicSharedBlindingFactor, lockBuilder.GetPublicSharedBlindingFactor(), subTxID);
 
-        SetTxParameter msg;
-        msg.AddParameter(TxParameterID::PeerProtoVersion, s_ProtoVersion)
-            .AddParameter(TxParameterID::SubTxIndex, SubTxIndex::BEAM_LOCK_TX)
-            .AddParameter(TxParameterID::PeerPublicExcess, lockBuilder.GetPublicExcess())
-            .AddParameter(TxParameterID::PeerPublicNonce, lockBuilder.GetPublicNonce())
-            .AddParameter(TxParameterID::PeerSignature, lockBuilder.GetPartialSignature())
-            .AddParameter(TxParameterID::PeerOffset, lockBuilder.GetOffset())
-            .AddParameter(TxParameterID::PeerSharedBulletProofPart2, lockBuilder.GetRangeProofInitialPart2())
-            .AddParameter(TxParameterID::PeerSharedBulletProofPart3, bulletProof.m_Part3)
-            .AddParameter(TxParameterID::PeerPublicSharedBlindingFactor, lockBuilder.GetPublicSharedBlindingFactor());
+        Signature paymentProofSignature;
+        if (GetParameter(TxParameterID::PaymentConfirmation, paymentProofSignature, subTxID))
+        {
+            params.SetParameter(TxParameterID::PaymentConfirmation, paymentProofSignature, subTxID);
+        }
 
-        if (!SendTxParameters(std::move(msg)))
+        if (!SendTxParameters(std::move(params)))
         {
             OnFailed(TxFailureReason::FailedToSendParameters, false);
         }
@@ -1494,15 +1500,21 @@ namespace beam::wallet
 
     void AtomicSwapTransaction::SendSharedTxInvitation(const BaseTxBuilder& builder)
     {
-        SetTxParameter msg;
-        msg.AddParameter(TxParameterID::SubTxIndex, builder.GetSubTxID())
-            .AddParameter(TxParameterID::Amount, builder.GetAmount())
-            .AddParameter(TxParameterID::Fee, builder.GetFee())
-            .AddParameter(TxParameterID::MinHeight, builder.GetMinHeight())
-            .AddParameter(TxParameterID::PeerPublicExcess, builder.GetPublicExcess())
-            .AddParameter(TxParameterID::PeerPublicNonce, builder.GetPublicNonce());
+        TxParameters params;
+        params
+            .SetParameter(TxParameterID::Amount, builder.GetAmount(), builder.GetSubTxID())
+            .SetParameter(TxParameterID::Fee, builder.GetFee(), builder.GetSubTxID())
+            .SetParameter(TxParameterID::MinHeight, builder.GetMinHeight(), builder.GetSubTxID())
+            .SetParameter(TxParameterID::PeerPublicExcess, builder.GetPublicExcess(), builder.GetSubTxID())
+            .SetParameter(TxParameterID::PeerPublicNonce, builder.GetPublicNonce(), builder.GetSubTxID());
+
+        Signature paymentProofSignature;
+        if (GetParameter(TxParameterID::PaymentConfirmation, paymentProofSignature, builder.GetSubTxID()))
+        {
+            params.SetParameter(TxParameterID::PaymentConfirmation, paymentProofSignature, builder.GetSubTxID());
+        }
     
-        if (!SendTxParameters(std::move(msg)))
+        if (!SendTxParameters(std::move(params)))
         {
             OnFailed(TxFailureReason::FailedToSendParameters, false);
         }
@@ -1510,14 +1522,14 @@ namespace beam::wallet
 
     void AtomicSwapTransaction::ConfirmSharedTxInvitation(const BaseTxBuilder& builder)
     {
-        SetTxParameter msg;
-        msg.AddParameter(TxParameterID::SubTxIndex, builder.GetSubTxID())
-            .AddParameter(TxParameterID::PeerPublicExcess, builder.GetPublicExcess())
-            .AddParameter(TxParameterID::PeerSignature, builder.GetPartialSignature())
-            .AddParameter(TxParameterID::PeerPublicNonce, builder.GetPublicNonce())
-            .AddParameter(TxParameterID::PeerOffset, builder.GetOffset());
+        TxParameters params;
+        params
+            .SetParameter(TxParameterID::PeerPublicExcess, builder.GetPublicExcess(), builder.GetSubTxID())
+            .SetParameter(TxParameterID::PeerSignature, builder.GetPartialSignature(), builder.GetSubTxID())
+            .SetParameter(TxParameterID::PeerPublicNonce, builder.GetPublicNonce(), builder.GetSubTxID())
+            .SetParameter(TxParameterID::PeerOffset, builder.GetOffset(), builder.GetSubTxID());
 
-        if (!SendTxParameters(std::move(msg)))
+        if (!SendTxParameters(std::move(params)))
         {
             OnFailed(TxFailureReason::FailedToSendParameters, false);
         }
@@ -1531,11 +1543,11 @@ namespace beam::wallet
         {
             LOG_DEBUG() << GetTxID() << " send additional info for quick refund";
 
-            SetTxParameter msg;
+            TxParameters params;
 
             // send our private key of redeem tx. we are good :)
-            msg.AddParameter(TxParameterID::AtomicSwapPeerPrivateKey, secretPrivateKey.V);
-            SendTxParameters(std::move(msg));
+            params.SetParameter(TxParameterID::AtomicSwapPeerPrivateKey, secretPrivateKey.V);
+            SendTxParameters(std::move(params));
         }
     }
 
@@ -1568,7 +1580,7 @@ namespace beam::wallet
 
     void AtomicSwapTransaction::ExtractSecretPrivateKey()
     {
-        auto subTxID = SubTxIndex::BEAM_REDEEM_TX;
+        const auto subTxID = SubTxIndex::BEAM_REDEEM_TX;
         TxKernelStd::Ptr kernel = GetMandatoryParameter<TxKernelStd::Ptr>(TxParameterID::Kernel, subTxID);
 
         SharedTxBuilder builder{ *this, subTxID };

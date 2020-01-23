@@ -152,21 +152,6 @@ namespace beam::wallet
                 return;
             }
 
-            uint64_t nAddrOwnID;
-            if (!GetParameter(TxParameterID::MyAddressID, nAddrOwnID))
-            {
-                WalletID wid;
-                if (GetParameter(TxParameterID::MyID, wid))
-                {
-                    auto waddr = m_WalletDB->getAddress(wid);
-                    if (waddr && waddr->isOwn())
-                    {
-                        SetParameter(TxParameterID::MyAddressID, waddr->m_OwnID);
-                        SetParameter(TxParameterID::MySecureWalletID, waddr->m_Identity);
-                    }
-                }
-            }
-
             if (!builder.GetInitialTxParams() && txState == State::Initial)
             {
                 const auto isAsset = builder.GetAssetId() != 0;
@@ -360,19 +345,19 @@ namespace beam::wallet
 
     void SimpleTransaction::SendInvitation(const BaseTxBuilder& builder, bool isSender)
     {
-        SetTxParameter msg;
-        msg.AddParameter(TxParameterID::Amount, builder.GetAmount())
-            .AddParameter(TxParameterID::Fee, builder.GetFee())
-            .AddParameter(TxParameterID::MinHeight, builder.GetMinHeight())
-            .AddParameter(TxParameterID::Lifetime, builder.GetLifetime())
-            .AddParameter(TxParameterID::PeerMaxHeight, builder.GetMaxHeight())
-            .AddParameter(TxParameterID::IsSender, !isSender)
-            .AddParameter(TxParameterID::PeerProtoVersion, s_ProtoVersion)
-            .AddParameter(TxParameterID::PeerPublicExcess, builder.GetPublicExcess())
-            .AddParameter(TxParameterID::PeerPublicNonce, builder.GetPublicNonce())
-            .AddParameter(TxParameterID::AssetID, builder.GetAssetId());
+        TxParameters params;
+        params.SetParameter(TxParameterID::Amount, builder.GetAmount())
+              .SetParameter(TxParameterID::Fee, builder.GetFee())
+              .SetParameter(TxParameterID::MinHeight, builder.GetMinHeight())
+              .SetParameter(TxParameterID::Lifetime, builder.GetLifetime())
+              .SetParameter(TxParameterID::PeerMaxHeight, builder.GetMaxHeight())
+              .SetParameter(TxParameterID::IsSender, !isSender)
+              .SetParameter(TxParameterID::PeerProtoVersion, s_ProtoVersion)
+              .SetParameter(TxParameterID::PeerPublicExcess, builder.GetPublicExcess())
+              .SetParameter(TxParameterID::PeerPublicNonce, builder.GetPublicNonce())
+              .SetParameter(TxParameterID::AssetID, builder.GetAssetId());
 
-        if (!SendTxParameters(move(msg)))
+        if (!SendTxParameters(move(params)))
         {
             OnFailed(TxFailureReason::FailedToSendParameters, false);
         }
@@ -381,16 +366,16 @@ namespace beam::wallet
     void SimpleTransaction::ConfirmInvitation(const BaseTxBuilder& builder)
     {
         LOG_INFO() << GetTxID() << " Transaction accepted. Kernel: " << builder.GetKernelIDString();
-        SetTxParameter msg;
-        msg
-            .AddParameter(TxParameterID::PeerProtoVersion, s_ProtoVersion)
-            .AddParameter(TxParameterID::PeerPublicExcess, builder.GetPublicExcess())
-            .AddParameter(TxParameterID::PeerSignature, builder.GetPartialSignature())
-            .AddParameter(TxParameterID::PeerPublicNonce, builder.GetPublicNonce())
-            .AddParameter(TxParameterID::PeerMaxHeight, builder.GetMaxHeight())
-            .AddParameter(TxParameterID::PeerInputs, builder.GetInputs())
-            .AddParameter(TxParameterID::PeerOutputs, builder.GetOutputs())
-            .AddParameter(TxParameterID::PeerOffset, builder.GetOffset());
+        TxParameters params;
+        params
+            .SetParameter(TxParameterID::PeerProtoVersion, s_ProtoVersion)
+            .SetParameter(TxParameterID::PeerPublicExcess, builder.GetPublicExcess())
+            .SetParameter(TxParameterID::PeerSignature, builder.GetPartialSignature())
+            .SetParameter(TxParameterID::PeerPublicNonce, builder.GetPublicNonce())
+            .SetParameter(TxParameterID::PeerMaxHeight, builder.GetMaxHeight())
+            .SetParameter(TxParameterID::PeerInputs, builder.GetInputs())
+            .SetParameter(TxParameterID::PeerOutputs, builder.GetOutputs())
+            .SetParameter(TxParameterID::PeerOffset, builder.GetOffset());
 
         assert(!IsSelfTx());
         if (!GetMandatoryParameter<bool>(TxParameterID::IsSender))
@@ -398,7 +383,7 @@ namespace beam::wallet
             Signature paymentProofSignature;
             if (GetParameter(TxParameterID::PaymentConfirmation, paymentProofSignature))
             {
-                msg.AddParameter(TxParameterID::PaymentConfirmation, paymentProofSignature);
+                params.SetParameter(TxParameterID::PaymentConfirmation, paymentProofSignature);
             }
             else
             {
@@ -424,21 +409,21 @@ namespace beam::wallet
                         proto::Sk2Pk(widMy.m_Pk, sk);
 
                         pc.Sign(sk);
-                        msg.AddParameter(TxParameterID::PaymentConfirmation, pc.m_Signature);
+                        params.SetParameter(TxParameterID::PaymentConfirmation, pc.m_Signature);
                     }
                 }
             }
         }
 
-        SendTxParameters(move(msg));
+        SendTxParameters(move(params));
     }
 
     void SimpleTransaction::NotifyTransactionRegistered()
     {
-        SetTxParameter msg;
+        TxParameters params;
 		uint8_t nCode = proto::TxStatus::Ok; // compiler workaround (ref to static const)
-        msg.AddParameter(TxParameterID::TransactionRegistered, nCode);
-        SendTxParameters(move(msg));
+        params.SetParameter(TxParameterID::TransactionRegistered, nCode);
+        SendTxParameters(move(params));
     }
 
     bool SimpleTransaction::IsSelfTx() const
