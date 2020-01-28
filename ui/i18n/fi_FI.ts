@@ -990,7 +990,12 @@
 •  must contain at least one lowercase letter
 •  must contain at least one uppercase letter
 •  must contain at least one number</source>
-        <translation>Vahvan salasanan tulee täyttää seuraavat kriteerit:
+        <oldsource>Strong password needs to meet the following requirements:
+•  the length must be at least 10 characters
+•  must contain at least one lowercase letter
+•  must contain at least one uppercase letter
+•  must contain at least one number</oldsource>
+        <translation type="unfinished">Vahvan salasanan tulee täyttää seuraavat kriteerit:
 •  salasanassa täytyy olla vähintään 10 merkkiä
 •  vähintään yksi kirjain pienellä
 •  vähintään yksi kirjain isolla
@@ -1263,7 +1268,9 @@
     <message id="swap-na-message">
         <source>You do not have any 3rd-party currencies connected.
 Update your settings and try again.</source>
-        <translation>Sinulla ei ole ulkoisia valuuttoja yhdistettynä.
+        <oldsource>You do not have any 3rd-party currencies connected.
+Update your settings and try again.</oldsource>
+        <translation type="unfinished">Sinulla ei ole ulkoisia valuuttoja yhdistettynä.
 Päivitä asetuksesi ja yritä uudelleen.</translation>
     </message>
     <message id="wallet-receive-swap-title">
@@ -1345,7 +1352,9 @@ Päivitä asetuksesi ja yritä uudelleen.</translation>
     <message id="swap-currency-na-message">
         <source>%1 is not connected, 
 please review your settings and try again</source>
-        <translation>%1 ei ole yhdistetty.
+        <oldsource>%1 is not connected, 
+please review your settings and try again</oldsource>
+        <translation type="unfinished">%1 ei ole yhdistetty.
 Tarkista asetuksesi ja yritä uudelleen.</translation>
     </message>
     <message id="send-not-enough">
@@ -1541,13 +1550,17 @@ Tarkista asetuksesi ja yritä uudelleen.</translation>
     <message id="settings-progress-na">
         <source>You cannot disconnect wallet, edit seed phrase or change default
 fee while you have transactions in progress.</source>
-        <translation>Et voi katkaista lompakon yhteyttä, muokata seed phrasea tai vaihtaa oletuksena olevaa
+        <oldsource>You cannot disconnect wallet, edit seed phrase or change default
+fee while you have transactions in progress.</oldsource>
+        <translation type="unfinished">Et voi katkaista lompakon yhteyttä, muokata seed phrasea tai vaihtaa oletuksena olevaa
 siirtomaksua, kun sinulla on käsittelyssä olevia tapahtumia.</translation>
     </message>
     <message id="atomic-no-offers">
         <source>There are no active offers at the moment.
 Please try again later or create an offer yourself.</source>
-        <translation>Ei yhtään voimassa olevaa tarjousta.
+        <oldsource>There are no active offers at the moment.
+Please try again later or create an offer yourself.</oldsource>
+        <translation type="unfinished">Ei yhtään voimassa olevaa tarjousta.
 Tee oma tarjous tai yritä myöhemmin uudelleen.</translation>
     </message>
     <message id="send-less-than-fee">
@@ -1718,7 +1731,9 @@ Tarkista swap-tunniste ja yritä uudelleen.</translation>
     <message id="swap-offer-duplicate-message">
         <source>The offer with this transaction token is already accepted.
 Please check the swap token and try again.</source>
-        <translation>Tarjous tällä tapahtuman tunnisteella on jo hyväksytty.
+        <oldsource>The offer with this transaction token is already accepted.
+Please check the swap token and try again.</oldsource>
+        <translation type="unfinished">Tarjous tällä tapahtuman tunnisteella on jo hyväksytty.
 Tarkista swap-tunniste ja yritä uudelleen.</translation>
     </message>
     <message id="swap-offer-duplicate-title">
@@ -2007,6 +2022,9 @@ Ilman seed phrasea et voi palauttaa lompakkosi saldoa tarvittaessa.</translation
         <source>Please notice, that knowing your owner key allows to
 know all your funds (UTXO). Make sure that you
 deploy the key at the node you trust completely.</source>
+        <oldsource>Please notice, that knowing your owner key allows to
+know all your funds (UTXO). Make sure that you
+deploy the key at the node you trust completely.</oldsource>
         <extracomment>settings tab, show owner key message</extracomment>
         <translation type="unfinished"></translation>
     </message>

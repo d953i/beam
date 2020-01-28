@@ -990,7 +990,12 @@
 •  must contain at least one lowercase letter
 •  must contain at least one uppercase letter
 •  must contain at least one number</source>
-        <translation>Een sterk wachtwoord moet voldoen aan de volgende vereisten:
+        <oldsource>Strong password needs to meet the following requirements:
+•  the length must be at least 10 characters
+•  must contain at least one lowercase letter
+•  must contain at least one uppercase letter
+•  must contain at least one number</oldsource>
+        <translation type="unfinished">Een sterk wachtwoord moet voldoen aan de volgende vereisten:
 •  Wachtwoord moet uit ten minste 10 tekens bestaan
 •  moet ten minste één kleine letter bevatten
 •  moet ten minste één hoofdletter bevatten
@@ -1263,7 +1268,9 @@
     <message id="swap-na-message">
         <source>You do not have any 3rd-party currencies connected.
 Update your settings and try again.</source>
-        <translation>U heeft geen 3rd-party valuta gekoppeld.
+        <oldsource>You do not have any 3rd-party currencies connected.
+Update your settings and try again.</oldsource>
+        <translation type="unfinished">U heeft geen 3rd-party valuta gekoppeld.
 Update uw instellingen en probeer opnieuw.</translation>
     </message>
     <message id="wallet-receive-swap-title">
@@ -1345,7 +1352,9 @@ Update uw instellingen en probeer opnieuw.</translation>
     <message id="swap-currency-na-message">
         <source>%1 is not connected, 
 please review your settings and try again</source>
-        <translation>%1 is niet verbonden,
+        <oldsource>%1 is not connected, 
+please review your settings and try again</oldsource>
+        <translation type="unfinished">%1 is niet verbonden,
 controleer uw instellingen en probeer opnieuw.</translation>
     </message>
     <message id="send-not-enough">
@@ -1541,13 +1550,17 @@ controleer uw instellingen en probeer opnieuw.</translation>
     <message id="settings-progress-na">
         <source>You cannot disconnect wallet, edit seed phrase or change default
 fee while you have transactions in progress.</source>
-        <translation>U kunt de wallet niet loskoppelen, bewerk herstelzin of wijzig de standaard
+        <oldsource>You cannot disconnect wallet, edit seed phrase or change default
+fee while you have transactions in progress.</oldsource>
+        <translation type="unfinished">U kunt de wallet niet loskoppelen, bewerk herstelzin of wijzig de standaard
 fee terwijl u transacties in uitvoering hebt.</translation>
     </message>
     <message id="atomic-no-offers">
         <source>There are no active offers at the moment.
 Please try again later or create an offer yourself.</source>
-        <translation>Er zijn momenteel geen actieve aanbiedingen.
+        <oldsource>There are no active offers at the moment.
+Please try again later or create an offer yourself.</oldsource>
+        <translation type="unfinished">Er zijn momenteel geen actieve aanbiedingen.
 Probeer het later opnieuw of maak zelf een aanbieding.</translation>
     </message>
     <message id="send-less-than-fee">
@@ -1718,7 +1731,9 @@ Controleer de swaptoken en probeer het opnieuw.</translation>
     <message id="swap-offer-duplicate-message">
         <source>The offer with this transaction token is already accepted.
 Please check the swap token and try again.</source>
-        <translation>Het aanbod met deze transactietoken is al geaccepteerd.
+        <oldsource>The offer with this transaction token is already accepted.
+Please check the swap token and try again.</oldsource>
+        <translation type="unfinished">Het aanbod met deze transactietoken is al geaccepteerd.
 Controleer de swaptoken en probeer het opnieuw.</translation>
     </message>
     <message id="swap-offer-duplicate-title">
@@ -2007,6 +2022,9 @@ Zonder de zin kunt u uw tegoeden niet herstellen.</translation>
         <source>Please notice, that knowing your owner key allows to
 know all your funds (UTXO). Make sure that you
 deploy the key at the node you trust completely.</source>
+        <oldsource>Please notice, that knowing your owner key allows to
+know all your funds (UTXO). Make sure that you
+deploy the key at the node you trust completely.</oldsource>
         <extracomment>settings tab, show owner key message</extracomment>
         <translation type="unfinished"></translation>
     </message>

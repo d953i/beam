@@ -990,7 +990,12 @@
 •  must contain at least one lowercase letter
 •  must contain at least one uppercase letter
 •  must contain at least one number</source>
-        <translation>Starkes Passwort muss die folgenden Anforderungen erfüllen:
+        <oldsource>Strong password needs to meet the following requirements:
+•  the length must be at least 10 characters
+•  must contain at least one lowercase letter
+•  must contain at least one uppercase letter
+•  must contain at least one number</oldsource>
+        <translation type="unfinished">Starkes Passwort muss die folgenden Anforderungen erfüllen:
 • die Länge muss mindestens 10 Zeichen lang sein
 • muss mindestens einen Kleinbuchstaben enthalten
 • muss mindestens einen Großbuchstaben enthalten
@@ -1263,7 +1268,9 @@
     <message id="swap-na-message">
         <source>You do not have any 3rd-party currencies connected.
 Update your settings and try again.</source>
-        <translation>Sie haben keine Fremdwährungen verbunden.\nAktualisieren Sie Ihre Einstellungen und versuchen Sie es erneut.</translation>
+        <oldsource>You do not have any 3rd-party currencies connected.
+Update your settings and try again.</oldsource>
+        <translation type="unfinished">Sie haben keine Fremdwährungen verbunden.\nAktualisieren Sie Ihre Einstellungen und versuchen Sie es erneut.</translation>
     </message>
     <message id="wallet-receive-swap-title">
         <source>Create a Swap Offer</source>
@@ -1344,7 +1351,9 @@ Update your settings and try again.</source>
     <message id="swap-currency-na-message">
         <source>%1 is not connected, 
 please review your settings and try again</source>
-        <translation>%1 ist nicht verbunden, 
+        <oldsource>%1 is not connected, 
+please review your settings and try again</oldsource>
+        <translation type="unfinished">%1 ist nicht verbunden, 
 bitte überprüfen Sie Ihre Einstellungen und versuchen Sie es erneut.</translation>
     </message>
     <message id="send-not-enough">
@@ -1540,12 +1549,16 @@ bitte überprüfen Sie Ihre Einstellungen und versuchen Sie es erneut.</translat
     <message id="settings-progress-na">
         <source>You cannot disconnect wallet, edit seed phrase or change default
 fee while you have transactions in progress.</source>
-        <translation>Sie können Ihr Wallet nicht trennen, Ihre Seed-Phrase bearbeiten oder Grundeinstellungen ändern, während Transaktionen im Gange sind.</translation>
+        <oldsource>You cannot disconnect wallet, edit seed phrase or change default
+fee while you have transactions in progress.</oldsource>
+        <translation type="unfinished">Sie können Ihr Wallet nicht trennen, Ihre Seed-Phrase bearbeiten oder Grundeinstellungen ändern, während Transaktionen im Gange sind.</translation>
     </message>
     <message id="atomic-no-offers">
         <source>There are no active offers at the moment.
 Please try again later or create an offer yourself.</source>
-        <translation>Momentan gibt es keine aktiven Angebote.\nBitte versuchen Sie es später noch einmal oder erstellen Sie selbst ein Angebot.</translation>
+        <oldsource>There are no active offers at the moment.
+Please try again later or create an offer yourself.</oldsource>
+        <translation type="unfinished">Momentan gibt es keine aktiven Angebote.\nBitte versuchen Sie es später noch einmal oder erstellen Sie selbst ein Angebot.</translation>
     </message>
     <message id="send-less-than-fee">
         <source>The swap amount must be greater than the transaction fee</source>
@@ -1714,7 +1727,9 @@ Please try again later or create an offer yourself.</source>
     <message id="swap-offer-duplicate-message">
         <source>The offer with this transaction token is already accepted.
 Please check the swap token and try again.</source>
-        <translation>Das Angebot mit diesem Transaktions-Token ist bereits akzeptiert.\nBitte überprüfen Sie das Swap-Token und versuchen Sie es erneut.</translation>
+        <oldsource>The offer with this transaction token is already accepted.
+Please check the swap token and try again.</oldsource>
+        <translation type="unfinished">Das Angebot mit diesem Transaktions-Token ist bereits akzeptiert.\nBitte überprüfen Sie das Swap-Token und versuchen Sie es erneut.</translation>
     </message>
     <message id="swap-offer-duplicate-title">
         <source>Оffer is already accepted</source>
@@ -2001,6 +2016,9 @@ Please check the swap token and try again.</source>
         <source>Please notice, that knowing your owner key allows to
 know all your funds (UTXO). Make sure that you
 deploy the key at the node you trust completely.</source>
+        <oldsource>Please notice, that knowing your owner key allows to
+know all your funds (UTXO). Make sure that you
+deploy the key at the node you trust completely.</oldsource>
         <extracomment>settings tab, show owner key message</extracomment>
         <translation type="unfinished"></translation>
     </message>

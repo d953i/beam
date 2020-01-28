@@ -990,7 +990,12 @@
 •  must contain at least one lowercase letter
 •  must contain at least one uppercase letter
 •  must contain at least one number</source>
-        <translation>La contraseña segura debe cumplir los siguientes requisitos:
+        <oldsource>Strong password needs to meet the following requirements:
+•  the length must be at least 10 characters
+•  must contain at least one lowercase letter
+•  must contain at least one uppercase letter
+•  must contain at least one number</oldsource>
+        <translation type="unfinished">La contraseña segura debe cumplir los siguientes requisitos:
 • la longitud debe ser de al menos 10 caracteres
 • debe contener al menos una letra minúscula
 • debe contener al menos una letra mayúscula
@@ -1264,7 +1269,9 @@ Escanee este código QR o envíe esta dirección al remitente a través de un ca
     <message id="swap-na-message">
         <source>You do not have any 3rd-party currencies connected.
 Update your settings and try again.</source>
-        <translation>No tienes ninguna moneda de terceros conectada.
+        <oldsource>You do not have any 3rd-party currencies connected.
+Update your settings and try again.</oldsource>
+        <translation type="unfinished">No tienes ninguna moneda de terceros conectada.
 Actualiza tus ajustes e inténtalo de nuevo.</translation>
     </message>
     <message id="wallet-receive-swap-title">
@@ -1346,7 +1353,9 @@ Actualiza tus ajustes e inténtalo de nuevo.</translation>
     <message id="swap-currency-na-message">
         <source>%1 is not connected, 
 please review your settings and try again</source>
-        <translation>%1 no está conectado,
+        <oldsource>%1 is not connected, 
+please review your settings and try again</oldsource>
+        <translation type="unfinished">%1 no está conectado,
 por favor revise su configuración e inténtelo de nuevo.</translation>
     </message>
     <message id="send-not-enough">
@@ -1542,13 +1551,17 @@ por favor revise su configuración e inténtelo de nuevo.</translation>
     <message id="settings-progress-na">
         <source>You cannot disconnect wallet, edit seed phrase or change default
 fee while you have transactions in progress.</source>
-        <translation>No puedes desconectar la wallet, edita la frase semilla o cambia la comisión predeterminada
+        <oldsource>You cannot disconnect wallet, edit seed phrase or change default
+fee while you have transactions in progress.</oldsource>
+        <translation type="unfinished">No puedes desconectar la wallet, edita la frase semilla o cambia la comisión predeterminada
 mientras tienes transacciones en curso.</translation>
     </message>
     <message id="atomic-no-offers">
         <source>There are no active offers at the moment.
 Please try again later or create an offer yourself.</source>
-        <translation>No hay ofertas activas en este momento.
+        <oldsource>There are no active offers at the moment.
+Please try again later or create an offer yourself.</oldsource>
+        <translation type="unfinished">No hay ofertas activas en este momento.
 nPor favor, inténtalo de nuevo más tarde o crea una oferta usted mismo.</translation>
     </message>
     <message id="send-less-than-fee">
@@ -1718,7 +1731,9 @@ nPor favor, inténtalo de nuevo más tarde o crea una oferta usted mismo.</trans
     <message id="swap-offer-duplicate-message">
         <source>The offer with this transaction token is already accepted.
 Please check the swap token and try again.</source>
-        <translation>La oferta con este token de transacción ya está aceptada.
+        <oldsource>The offer with this transaction token is already accepted.
+Please check the swap token and try again.</oldsource>
+        <translation type="unfinished">La oferta con este token de transacción ya está aceptada.
 Por favor, comprueba el token de intercambio e inténtalo de nuevo.</translation>
     </message>
     <message id="swap-offer-duplicate-title">
@@ -2006,6 +2021,9 @@ Por favor, comprueba el token de intercambio e inténtalo de nuevo.</translation
         <source>Please notice, that knowing your owner key allows to
 know all your funds (UTXO). Make sure that you
 deploy the key at the node you trust completely.</source>
+        <oldsource>Please notice, that knowing your owner key allows to
+know all your funds (UTXO). Make sure that you
+deploy the key at the node you trust completely.</oldsource>
         <extracomment>settings tab, show owner key message</extracomment>
         <translation type="unfinished"></translation>
     </message>

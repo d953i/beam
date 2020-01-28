@@ -990,7 +990,12 @@
 •  must contain at least one lowercase letter
 •  must contain at least one uppercase letter
 •  must contain at least one number</source>
-        <translation>보안성이 강한 비밀번호를 만들기 위해서는 아래의 조건들을 충족시켜야 합니다 : 
+        <oldsource>Strong password needs to meet the following requirements:
+•  the length must be at least 10 characters
+•  must contain at least one lowercase letter
+•  must contain at least one uppercase letter
+•  must contain at least one number</oldsource>
+        <translation type="unfinished">보안성이 강한 비밀번호를 만들기 위해서는 아래의 조건들을 충족시켜야 합니다 : 
 • 최소한 10개의 글자로 이루어져야합니다.
 • 최소한 1개의 소문자가 포함되어야 합니다.
 • 최소한 1개의 대문자가 포함되어야 합니다.
@@ -1263,7 +1268,9 @@
     <message id="swap-na-message">
         <source>You do not have any 3rd-party currencies connected.
 Update your settings and try again.</source>
-        <translation>서드파티에 연결된 화폐가 없습니다. \n세팅을 업데이트한 후 재시도 하세요.</translation>
+        <oldsource>You do not have any 3rd-party currencies connected.
+Update your settings and try again.</oldsource>
+        <translation type="unfinished">서드파티에 연결된 화폐가 없습니다. \n세팅을 업데이트한 후 재시도 하세요.</translation>
     </message>
     <message id="wallet-receive-swap-title">
         <source>Create a Swap Offer</source>
@@ -1344,7 +1351,9 @@ Update your settings and try again.</source>
     <message id="swap-currency-na-message">
         <source>%1 is not connected, 
 please review your settings and try again</source>
-        <translation>%1 가 연결되지 않았습니다,
+        <oldsource>%1 is not connected, 
+please review your settings and try again</oldsource>
+        <translation type="unfinished">%1 가 연결되지 않았습니다,
 설정을 다시 하시고 재시도 해주세요.</translation>
     </message>
     <message id="send-not-enough">
@@ -1540,13 +1549,17 @@ please review your settings and try again</source>
     <message id="settings-progress-na">
         <source>You cannot disconnect wallet, edit seed phrase or change default
 fee while you have transactions in progress.</source>
-        <translation>트랜잭션이 진행되는 동안은 지갑 연결을 끊거나
+        <oldsource>You cannot disconnect wallet, edit seed phrase or change default
+fee while you have transactions in progress.</oldsource>
+        <translation type="unfinished">트랜잭션이 진행되는 동안은 지갑 연결을 끊거나
 시드 구문을 수정하거나 또는 기본 수수료를 바꿀 수 없습니다.</translation>
     </message>
     <message id="atomic-no-offers">
         <source>There are no active offers at the moment.
 Please try again later or create an offer yourself.</source>
-        <translation>활성화된 오퍼가 현재 없습니다.
+        <oldsource>There are no active offers at the moment.
+Please try again later or create an offer yourself.</oldsource>
+        <translation type="unfinished">활성화된 오퍼가 현재 없습니다.
 잠시 후 재시도하거나 오퍼를 만드십시오.</translation>
     </message>
     <message id="send-less-than-fee">
@@ -1717,6 +1730,8 @@ Please check the swap token and try again.</translation>
     <message id="swap-offer-duplicate-message">
         <source>The offer with this transaction token is already accepted.
 Please check the swap token and try again.</source>
+        <oldsource>The offer with this transaction token is already accepted.
+Please check the swap token and try again.</oldsource>
         <translation type="unfinished">The offer with this transaction token is already accepted.
 Please check the swap token and try again.</translation>
     </message>
@@ -2005,6 +2020,9 @@ Please check the swap token and try again.</translation>
         <source>Please notice, that knowing your owner key allows to
 know all your funds (UTXO). Make sure that you
 deploy the key at the node you trust completely.</source>
+        <oldsource>Please notice, that knowing your owner key allows to
+know all your funds (UTXO). Make sure that you
+deploy the key at the node you trust completely.</oldsource>
         <extracomment>settings tab, show owner key message</extracomment>
         <translation type="unfinished"></translation>
     </message>
