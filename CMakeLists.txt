@@ -404,6 +404,7 @@ add_subdirectory(keykeeper)
 add_subdirectory(wallet)
 add_subdirectory(node)
 add_subdirectory(mnemonic)
+add_subdirectory(beam-hw-crypto)
 
 
 if(ANDROID OR BEAM_BUILD_JNI)

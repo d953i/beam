@@ -21,9 +21,17 @@
 #endif // LEDGER_SDK
 #include "debug.h"
 #include "beam/definitions.h"
-#if defined(TREZOR_CRYPTO_MOD) || defined(LEDGER_SDK)
+#if defined(TREZOR_CRYPTO_MOD) || defined(LEDGER_SDK) || defined(DESKTOP_SDK)
 #include "lib/aes/aes.h"
 #endif // TREZOR_CRYPTO_MOD
+#ifdef DESKTOP_SDK
+#   define USE_BASIC_CONFIG
+#   include "secp256k1-zkp/src/basic-config.h"
+#   include "secp256k1-zkp/include/secp256k1.h"
+#   include "secp256k1-zkp/src/scalar.h"
+#   include "secp256k1-zkp/src/group.h"
+#   include "secp256k1-zkp/src/hash.h"
+#endif // DESKTOP_SDK
 
 #define BIP32_PATH 5
 
@@ -34,6 +42,9 @@ typedef cx_hmac_sha256_t beam_hmac_sha256_ctx;
 #include "crypto_trezor/hmac.h"
 typedef SHA256_CTX beam_sha256_ctx;
 typedef HMAC_SHA256_CTX beam_hmac_sha256_ctx;
+#elif defined(DESKTOP_SDK)
+    typedef secp256k1_sha256_t beam_sha256_ctx;
+    typedef secp256k1_hmac_sha256_t beam_hmac_sha256_ctx;
 #else
 #error "Define your own SHA256 and HMAC_SHA256 contexts!"
 #endif
