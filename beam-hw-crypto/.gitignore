@@ -1,0 +1,5 @@
+*.d
+*.exe
+*.o
+*.os
+tests/test_check_beam
