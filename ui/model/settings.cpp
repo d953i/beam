@@ -21,6 +21,10 @@
 #include <QtQuick>
 
 #include "ui/model/app_model.h"
+
+#include "wallet/bitcoin/settings.h"
+#include "wallet/default_peers.h"
+
 #include "version.h"
 
 #include "quazip/quazip.h"
@@ -35,6 +39,7 @@ namespace
     const char* kLockTimeoutName = "lock_timeout";
     const char* kRequirePasswordToSpendMoney = "require_password_to_spend_money";
     const char* kIsAlowedBeamMWLink = "beam_mw_links_allowed";
+    const char* kshowSwapBetaWarning = "show_swap_beta_warning";
 
     const char* kLocalNodeRun = "localnode/run";
     const char* kLocalNodePort = "localnode/port";
@@ -46,17 +51,38 @@ namespace
         { "zh_CN", "Chinese Simplified"},
         { "en_US", "English" },
         { "es_ES", "Español"},
+        { "be_BY", "Беларуская"},
+        { "cs_CZ", "Czech"},
+        { "de_DE", "Deutsch"},
+        { "nl_NL", "Dutch"},
         { "fr_FR", "Française"},
+        { "id_ID", "Bahasa Indonesia"},
+        { "it_IT", "Italiano"},
+        { "ja_JP", "日本語"},
         { "ru_RU", "Русский" },
+        { "fi_FI", "Suomi" },
+        { "sv_SE", "Svenska"},
+        { "th_TH", "ภาษาไทย"},
+        { "tr_TR", "Türkçe"},
         { "vi_VI", "Tiếng việt"},
         { "ko_KR", "한국어"}
     };
-}
+
+    const vector<string> kOutDatedPeers = beam::getOutdatedDefaultPeers();
+    bool isOutDatedPeer(const string& peer)
+    {
+        return find(kOutDatedPeers.begin(), kOutDatedPeers.end(), peer) !=
+               kOutDatedPeers.end();
+    }
+}  // namespace
 
 const char* WalletSettings::WalletCfg = "beam-wallet.cfg";
 const char* WalletSettings::LogsFolder = "logs";
 const char* WalletSettings::SettingsFile = "settings.ini";
 const char* WalletSettings::WalletDBFile = "wallet.db";
+#if defined(BEAM_HW_WALLET)
+const char* WalletSettings::TrezorWalletDBFile = "trezor-wallet.db";
+#endif
 const char* WalletSettings::NodeDBFile = "node.db";
 
 WalletSettings::WalletSettings(const QDir& appDataDir)
@@ -66,7 +92,19 @@ WalletSettings::WalletSettings(const QDir& appDataDir)
 
 }
 
+#if defined(BEAM_HW_WALLET)
+string WalletSettings::getTrezorWalletStorage() const
+{
+    return getWalletFolder() + "/" + TrezorWalletDBFile;
+}
+#endif
+
 string WalletSettings::getWalletStorage() const
+{
+    return getWalletFolder() + "/" + WalletDBFile;
+}
+
+string WalletSettings::getWalletFolder() const
 {
     Lock lock(m_mutex);
 
@@ -75,8 +113,8 @@ string WalletSettings::getWalletStorage() const
     {
         m_appDataDir.mkdir(version);
     }
-    
-    return m_appDataDir.filePath(version + "/" + WalletDBFile).toStdString();
+
+    return m_appDataDir.filePath(version).toStdString();
 }
 
 string WalletSettings::getAppDataPath() const
@@ -95,7 +133,7 @@ void WalletSettings::setNodeAddress(const QString& addr)
 {
     if (addr != getNodeAddress())
     {
-        auto walletModel = AppModel::getInstance()->getWallet();
+        auto walletModel = AppModel::getInstance().getWallet();
         if (walletModel)
         {
             walletModel->getAsync()->setNodeAddress(addr.toStdString());
@@ -150,6 +188,18 @@ void WalletSettings::setAllowedBeamMWLinks(bool value)
 {
     Lock lock(m_mutex);
     m_data.setValue(kIsAlowedBeamMWLink, value);
+}
+
+bool WalletSettings::showSwapBetaWarning()
+{
+    Lock lock(m_mutex);
+    return m_data.value(kshowSwapBetaWarning, true).toBool();
+}
+
+void WalletSettings::setShowSwapBetaWarning(bool value)
+{
+    Lock lock(m_mutex);
+    m_data.setValue(kshowSwapBetaWarning, value);
 }
 
 bool WalletSettings::getRunLocalNode() const
@@ -212,10 +262,29 @@ static void zipLocalFile(QuaZip& zip, const QString& path, const QString& folder
     }
 }
 
-QStringList WalletSettings::getLocalNodePeers() const
+QStringList WalletSettings::getLocalNodePeers()
 {
     Lock lock(m_mutex);
-    return m_data.value(kLocalNodePeers).value<QStringList>();
+    QStringList peers = m_data.value(kLocalNodePeers).value<QStringList>();
+    size_t outDatedCount = count_if(
+        peers.begin(),
+        peers.end(),
+        [] (const QString& peer)
+        {
+            return isOutDatedPeer(peer.toStdString());
+        });
+    if (outDatedCount >= static_cast<size_t>(peers.size()) || peers.empty())
+    {
+        auto defaultPeers = beam::getDefaultPeers();
+        peers.clear();
+        peers.reserve(static_cast<int>(defaultPeers.size()));
+        for (const auto& it : defaultPeers)
+        {
+            peers << QString::fromStdString(it);
+        }
+        m_data.setValue(kLocalNodePeers, QVariant::fromValue(peers));
+    }
+    return peers;
 }
 
 void WalletSettings::setLocalNodePeers(const QStringList& qPeers)
@@ -362,5 +431,5 @@ void WalletSettings::reportProblem()
 
 void WalletSettings::applyChanges()
 {
-    AppModel::getInstance()->applySettingsChanges();
+    AppModel::getInstance().applySettingsChanges();
 }

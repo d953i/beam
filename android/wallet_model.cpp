@@ -63,13 +63,14 @@ namespace
     }
 }
 
-WalletModel::WalletModel(IWalletDB::Ptr walletDB, const std::string& nodeAddr, Reactor::Ptr reactor)
-    : WalletClient(walletDB, nodeAddr, reactor)
+WalletModel::WalletModel(IWalletDB::Ptr walletDB, IPrivateKeyKeeper::Ptr keyKeeper, const std::string& nodeAddr, Reactor::Ptr reactor)
+    : WalletClient(walletDB, nodeAddr, reactor, keyKeeper)
 {    
 }
 
 WalletModel::~WalletModel()
 {
+    stopReactor();
 }
 
 void WalletModel::onStatus(const WalletStatus& status)
@@ -227,6 +228,13 @@ void WalletModel::onAddresses(bool own, const std::vector<WalletAddress>& addres
     env->DeleteLocalRef(addrArray);
 }
 
+void WalletModel::onSwapOffersChanged(beam::wallet::ChangeAction action, const std::vector<beam::wallet::SwapOffer>& offers)
+{
+    LOG_DEBUG() << "onSwapOffersChanged()";
+
+    // TODO
+}
+
 void WalletModel::onGeneratedNewAddress(const WalletAddress& address)
 {
     LOG_DEBUG() << "onGeneratedNewAddress()";
@@ -248,6 +256,13 @@ void WalletModel::onGeneratedNewAddress(const WalletAddress& address)
     env->CallStaticVoidMethod(WalletListenerClass, callback, addr);
 
     env->DeleteLocalRef(addr);
+}
+
+void WalletModel::onSwapParamsLoaded(const beam::ByteBuffer& params)
+{
+    LOG_DEBUG() << "onSwapParamsLoaded()";
+
+    // TODO
 }
 
 void WalletModel::onNewAddressFailed()
@@ -272,13 +287,13 @@ void WalletModel::onNodeConnectionChanged(bool isNodeConnected)
 
 void WalletModel::onWalletError(ErrorType error)
 {
-    LOG_DEBUG() << "onNodeConnectionFailed(): error = " << static_cast<uint8_t>(error);
+    LOG_DEBUG() << "onWalletError: error = " << static_cast<int>(error);
 
     JNIEnv* env = Android_JNI_getEnv();
 
     jmethodID callback = env->GetStaticMethodID(WalletListenerClass, "onNodeConnectionFailed", "(I)V");
 
-    env->CallStaticVoidMethod(WalletListenerClass, callback, static_cast<uint8_t>(error));
+    env->CallStaticVoidMethod(WalletListenerClass, callback, static_cast<int>(error));
 }
 
 void WalletModel::FailedToStartWallet()
@@ -348,4 +363,40 @@ void WalletModel::onCoinsByTx(const std::vector<Coin>& coins)
 void WalletModel::onAddressChecked(const std::string& addr, bool isValid)
 {
 
+}
+
+void WalletModel::onImportRecoveryProgress(uint64_t done, uint64_t total)
+{
+    LOG_DEBUG() << "onImportRecoveryProgress(" << done << ", " << total << ")";
+
+    JNIEnv* env = Android_JNI_getEnv();
+
+    jmethodID callback = env->GetStaticMethodID(WalletListenerClass, "onImportRecoveryProgress", "(JJ)V");
+
+    env->CallStaticVoidMethod(WalletListenerClass, callback, done, total);
+}
+
+void WalletModel::onImportDataFromJson(bool isOk)
+{
+    LOG_DEBUG() << "onImportDataFromJson(" << isOk << ")";
+
+    JNIEnv* env = Android_JNI_getEnv();
+
+    jmethodID callback = env->GetStaticMethodID(WalletListenerClass, "onImportDataFromJson", "(Z)V");
+
+    env->CallStaticVoidMethod(WalletListenerClass, callback, isOk);
+}
+
+void WalletModel::onExportDataToJson(const std::string& data)
+{
+    LOG_DEBUG() << "onExportDataToJson";
+
+    JNIEnv* env = Android_JNI_getEnv();
+
+    jmethodID callback = env->GetStaticMethodID(WalletListenerClass, "onExportDataToJson", "(Ljava/lang/String;)V");
+
+    jstring jdata = env->NewStringUTF(data.c_str());
+
+    env->CallStaticVoidMethod(WalletListenerClass, callback, jdata);
+    env->DeleteLocalRef(jdata);
 }

@@ -14,8 +14,8 @@
 
 #include "wallet_client.h"
 #include "utility/log_rotation.h"
-#include "../core/block_rw.h"
-
+#include "core/block_rw.h"
+#include "keykeeper/trezor_key_keeper.h"
 
 using namespace std;
 
@@ -31,19 +31,19 @@ struct ScopedSubscriber
         : m_observer(observer)
         , m_notifier(notifier)
     {
-        m_notifier->subscribe(m_observer);
+        m_notifier->Subscribe(m_observer);
     }
 
     ~ScopedSubscriber()
     {
-        m_notifier->unsubscribe(m_observer);
+        m_notifier->Unsubscribe(m_observer);
     }
 private:
     Observer * m_observer;
     std::shared_ptr<Notifier> m_notifier;
 };
 
-using WalletSubscriber = ScopedSubscriber<wallet::IWalletObserver, wallet::IWallet>;
+using WalletSubscriber = ScopedSubscriber<wallet::IWalletObserver, wallet::Wallet>;
 
 struct WalletModelBridge : public Bridge<IWalletModelAsync>
 {
@@ -51,130 +51,115 @@ struct WalletModelBridge : public Bridge<IWalletModelAsync>
 
     void sendMoney(const wallet::WalletID& receiverID, const std::string& comment, Amount&& amount, Amount&& fee) override
     {
-        tx.send([receiverID, comment, amount{ move(amount) }, fee{ move(fee) }](BridgeInterface& receiver_) mutable
-        {
-            receiver_.sendMoney(receiverID, comment, move(amount), move(fee));
-        });
+        typedef void(IWalletModelAsync::*SendMoneyType)(const wallet::WalletID&, const std::string&, Amount&&, Amount&&);
+        call_async((SendMoneyType)&IWalletModelAsync::sendMoney, receiverID, comment, move(amount), move(fee));
     }
 
     void sendMoney(const wallet::WalletID& senderID, const wallet::WalletID& receiverID, const std::string& comment, Amount&& amount, Amount&& fee) override
     {
-        tx.send([senderID, receiverID, comment, amount{ move(amount) }, fee{ move(fee) }](BridgeInterface& receiver_) mutable
-        {
-            receiver_.sendMoney(senderID, receiverID, comment, move(amount), move(fee));
-        });
+        typedef void(IWalletModelAsync::*SendMoneyType)(const wallet::WalletID &, const wallet::WalletID &, const std::string &, Amount &&, Amount &&);
+        call_async((SendMoneyType)&IWalletModelAsync::sendMoney, senderID, receiverID, comment, move(amount), move(fee));
+    }
+
+    void startTransaction(TxParameters&& parameters) override
+    {
+        call_async(&IWalletModelAsync::startTransaction, move(parameters));
     }
 
     void syncWithNode() override
     {
-        tx.send([](BridgeInterface& receiver_) mutable
-        {
-            receiver_.syncWithNode();
-        });
+        call_async(&IWalletModelAsync::syncWithNode);
     }
 
     void calcChange(Amount&& amount) override
     {
-        tx.send([amount{ move(amount) }](BridgeInterface& receiver_) mutable
-        {
-            receiver_.calcChange(move(amount));
-        });
+        call_async(&IWalletModelAsync::calcChange, move(amount));
     }
 
     void getWalletStatus() override
     {
-        tx.send([](BridgeInterface& receiver_) mutable
-        {
-            receiver_.getWalletStatus();
-        });
+        call_async(&IWalletModelAsync::getWalletStatus);
+    }
+
+    void getTransactions() override
+    {
+        call_async(&IWalletModelAsync::getTransactions);
     }
 
     void getUtxosStatus() override
     {
-        tx.send([](BridgeInterface& receiver_) mutable
-        {
-            receiver_.getUtxosStatus();
-        });
+        call_async(&IWalletModelAsync::getUtxosStatus);
     }
 
     void getAddresses(bool own) override
     {
-        tx.send([own](BridgeInterface& receiver_) mutable
-        {
-            receiver_.getAddresses(own);
-        });
+        call_async(&IWalletModelAsync::getAddresses, own);
+    }
+    
+#ifdef BEAM_ATOMIC_SWAP_SUPPORT    
+    void getSwapOffers() override
+    {
+		call_async(&IWalletModelAsync::getSwapOffers);
     }
 
+    void publishSwapOffer(const wallet::SwapOffer& offer) override
+    {
+		call_async(&IWalletModelAsync::publishSwapOffer, offer);
+    }
+#endif
     void cancelTx(const wallet::TxID& id) override
     {
-        tx.send([id](BridgeInterface& receiver_) mutable
-        {
-            receiver_.cancelTx(id);
-        });
+        call_async(&IWalletModelAsync::cancelTx, id);
     }
 
     void deleteTx(const wallet::TxID& id) override
     {
-        tx.send([id](BridgeInterface& receiver_) mutable
-        {
-            receiver_.deleteTx(id);
-        });
+        call_async(&IWalletModelAsync::deleteTx, id);
     }
 
     void getCoinsByTx(const wallet::TxID& id) override
     {
-        tx.send([id](BridgeInterface& receiver_) mutable
-        {
-            receiver_.getCoinsByTx(id);
-        });
+        call_async(&IWalletModelAsync::getCoinsByTx, id);
     }
 
     void saveAddress(const wallet::WalletAddress& address, bool bOwn) override
     {
-        tx.send([address, bOwn](BridgeInterface& receiver_) mutable
-        {
-            receiver_.saveAddress(address, bOwn);
-        });
+        call_async(&IWalletModelAsync::saveAddress, address, bOwn);
     }
 
     void changeCurrentWalletIDs(const wallet::WalletID& senderID, const wallet::WalletID& receiverID) override
     {
-        tx.send([senderID, receiverID](BridgeInterface& receiver_) mutable
-        {
-            receiver_.changeCurrentWalletIDs(senderID, receiverID);
-        });
+        call_async(&IWalletModelAsync::changeCurrentWalletIDs, senderID, receiverID);
+    }
+
+    void loadSwapParams() override
+    {
+        call_async(&IWalletModelAsync::loadSwapParams);
+    }
+
+    void storeSwapParams(const beam::ByteBuffer& params) override
+    {
+        call_async(&IWalletModelAsync::storeSwapParams, params);
     }
 
     void generateNewAddress() override
     {
-        tx.send([](BridgeInterface& receiver_) mutable
-        {
-            receiver_.generateNewAddress();
-        });
+        call_async(&IWalletModelAsync::generateNewAddress);
     }
 
     void deleteAddress(const wallet::WalletID& id) override
     {
-        tx.send([id](BridgeInterface& receiver_) mutable
-        {
-            receiver_.deleteAddress(id);
-        });
+        call_async(&IWalletModelAsync::deleteAddress, id);
     }
 
-    void saveAddressChanges(const wallet::WalletID& id, const std::string& name, bool isNever, bool makeActive, bool makeExpired) override
+    void updateAddress(const wallet::WalletID& id, const std::string& name, WalletAddress::ExpirationStatus status) override
     {
-        tx.send([id, name, isNever, makeActive, makeExpired](BridgeInterface& receiver_) mutable
-        {
-            receiver_.saveAddressChanges(id, name, isNever, makeActive, makeExpired);
-        });
+        call_async(&IWalletModelAsync::updateAddress, id, name, status);
     }
 
     void setNodeAddress(const std::string& addr) override
     {
-        tx.send([addr](BridgeInterface& receiver_) mutable
-        {
-            receiver_.setNodeAddress(addr);
-        });
+        call_async(&IWalletModelAsync::setNodeAddress, addr);
     }
 
     void changeWalletPassword(const SecString& pass) override
@@ -182,58 +167,74 @@ struct WalletModelBridge : public Bridge<IWalletModelAsync>
         // TODO: should be investigated, don't know how to "move" SecString into lambda
         std::string passStr(pass.data(), pass.size());
 
-        tx.send([passStr](BridgeInterface& receiver_) mutable
-        {
-            receiver_.changeWalletPassword(passStr);
-        });
+        call_async(&IWalletModelAsync::changeWalletPassword, passStr);
     }
 
     void getNetworkStatus() override
     {
-        tx.send([](BridgeInterface& receiver_) mutable
-        {
-            receiver_.getNetworkStatus();
-        });
+        call_async(&IWalletModelAsync::getNetworkStatus);
     }
 
     void refresh() override
     {
-        tx.send([](BridgeInterface& receiver_) mutable
-        {
-            receiver_.refresh();
-        });
+        call_async(&IWalletModelAsync::refresh);
     }
 
     void exportPaymentProof(const wallet::TxID& id) override
     {
-        tx.send([id](BridgeInterface& receiver_) mutable
-        {
-            receiver_.exportPaymentProof(id);
-        });
+        call_async(&IWalletModelAsync::exportPaymentProof, id);
     }
 
     void checkAddress(const std::string& addr) override
     {
-        tx.send([addr](BridgeInterface& receiver_) mutable
-        {
-            receiver_.checkAddress(addr);
-        });
+        call_async(&IWalletModelAsync::checkAddress, addr);
+    }
+
+    void importRecovery(const std::string& path) override
+    {
+        call_async(&IWalletModelAsync::importRecovery, path);
+    }
+
+    void importDataFromJson(const std::string& data) override
+    {
+        call_async(&IWalletModelAsync::importDataFromJson, data);
+    }
+
+    void exportDataToJson() override
+    {
+        call_async(&IWalletModelAsync::exportDataToJson);
+    }
+
+    void exportTxHistoryToCsv() override
+    {
+        call_async(&IWalletModelAsync::exportTxHistoryToCsv);
     }
 };
 }
 
 namespace beam::wallet
 {
-    WalletClient::WalletClient(IWalletDB::Ptr walletDB, const std::string& nodeAddr, io::Reactor::Ptr reactor)
+    WalletClient::WalletClient(IWalletDB::Ptr walletDB, const std::string& nodeAddr, io::Reactor::Ptr reactor, IPrivateKeyKeeper::Ptr keyKeeper)
         : m_walletDB(walletDB)
         , m_reactor{ reactor ? reactor : io::Reactor::create() }
         , m_async{ make_shared<WalletModelBridge>(*(static_cast<IWalletModelAsync*>(this)), *m_reactor) }
-        , m_isConnected(false)
+        , m_connectedNodesCount(0)
+        , m_trustedConnectionCount(0)
         , m_nodeAddrStr(nodeAddr)
+        , m_keyKeeper(keyKeeper)
     {
+        m_keyKeeper->subscribe(this);
     }
 
     WalletClient::~WalletClient()
+    {
+        // reactor should be already stopped here, but just in case
+        // this call is unsafe and may result in crash if reactor is not stopped
+        assert(!m_thread && !m_reactor);
+        stopReactor();
+    }
+
+    void WalletClient::stopReactor()
     {
         try
         {
@@ -242,9 +243,10 @@ namespace beam::wallet
                 if (m_thread)
                 {
                     m_reactor->stop();
-                    // TODO: check this
                     m_thread->join();
+                    m_thread.reset();
                 }
+                m_reactor.reset();
             }
         }
         catch (const std::exception& e)
@@ -256,9 +258,14 @@ namespace beam::wallet
         }
     }
 
-    void WalletClient::start()
+    void WalletClient::postFunctionToClientContext(MessageFunction&& func)
     {
-        m_thread = std::make_shared<std::thread>([this]()
+        onPostFunctionToClientContext(move(func));
+    }
+
+    void WalletClient::start(std::shared_ptr<std::unordered_map<TxType, BaseTransaction::Creator::Ptr>> txCreators)
+    {
+        m_thread = std::make_shared<std::thread>([this, txCreators]()
             {
                 try
                 {
@@ -267,34 +274,33 @@ namespace beam::wallet
 
 					std::unique_ptr<WalletSubscriber> wallet_subscriber;
 
-                    onStatus(getStatus());
-                    onTxStatus(ChangeAction::Reset, m_walletDB->getTxHistory());
-
                     static const unsigned LOG_ROTATION_PERIOD_SEC = 3 * 3600; // 3 hours
                     static const unsigned LOG_CLEANUP_PERIOD_SEC = 120 * 3600; // 5 days
                     LogRotation logRotation(*m_reactor, LOG_ROTATION_PERIOD_SEC, LOG_CLEANUP_PERIOD_SEC);
 
-                    auto wallet = make_shared<Wallet>(m_walletDB);
+                    auto wallet = make_shared<Wallet>(m_walletDB, m_keyKeeper);
                     m_wallet = wallet;
 
-                    struct MyNodeNetwork :public proto::FlyClient::NetworkStd {
+                    if (txCreators)
+                    {
+                        for (auto&[txType, creator] : *txCreators)
+                        {
+                            wallet->RegisterTransactionType(txType, creator);
+                        }
+                    }
 
-                        MyNodeNetwork(proto::FlyClient& fc, WalletClient& client)
+                    wallet->ResumeAllTransactions();
+
+                    updateClientState();
+
+                    class NodeNetwork final: public proto::FlyClient::NetworkStd
+                    {
+                    public:
+                        NodeNetwork(proto::FlyClient& fc, WalletClient& client, const std::string& nodeAddress)
                             : proto::FlyClient::NetworkStd(fc)
+                            , m_nodeAddrStr(nodeAddress)
                             , m_walletClient(client)
                         {
-                        }
-
-                        WalletClient& m_walletClient;
-
-                        void OnNodeConnected(size_t, bool bConnected) override
-                        {
-                            m_walletClient.nodeConnectedStatusChanged(bConnected);
-                        }
-
-                        void OnConnectionFailed(size_t, const proto::NodeConnection::DisconnectReason& reason) override
-                        {
-                            m_walletClient.nodeConnectionFailed(reason);
                         }
 
                         void tryToConnect()
@@ -315,7 +321,6 @@ namespace beam::wallet
                             else if (m_attemptToConnect == MAX_ATTEMPT_TO_CONNECT)
                             {
                                 proto::NodeConnection::DisconnectReason reason;
-
                                 reason.m_Type = proto::NodeConnection::DisconnectReason::Io;
                                 reason.m_IoError = io::EC_HOST_RESOLVED_ERROR;
                                 m_walletClient.nodeConnectionFailed(reason);
@@ -332,12 +337,23 @@ namespace beam::wallet
                                 {
                                     tryToConnect();
                                 }
-                                });
+                            });
                         }
 
-                        std::string m_nodeAddrStr;
-
                     private:
+                        void OnNodeConnected(size_t, bool bConnected) override
+                        {
+                            m_walletClient.nodeConnectedStatusChanged(bConnected);
+                        }
+
+                        void OnConnectionFailed(size_t, const proto::NodeConnection::DisconnectReason& reason) override
+                        {
+                            m_walletClient.nodeConnectionFailed(reason);
+                        }
+
+                    public:
+                        std::string m_nodeAddrStr;
+                        WalletClient& m_walletClient;
 
                         io::Timer::Ptr m_timer;
                         uint8_t m_attemptToConnect = 0;
@@ -346,21 +362,41 @@ namespace beam::wallet
                         const uint16_t RECONNECTION_TIMEOUT = 1000;
                     };
 
-                    auto nodeNetwork = make_shared<MyNodeNetwork>(*wallet, *this);
-
+                    auto nodeNetwork = make_shared<NodeNetwork>(*wallet, *this, m_nodeAddrStr);
                     m_nodeNetwork = nodeNetwork;
 
-                    auto walletNetwork = make_shared<WalletNetworkViaBbs>(*wallet, nodeNetwork, m_walletDB);
+                    auto walletNetwork = make_shared<WalletNetworkViaBbs>(*wallet, nodeNetwork, m_walletDB, m_keyKeeper);
                     m_walletNetwork = walletNetwork;
                     wallet->SetNodeEndpoint(nodeNetwork);
                     wallet->AddMessageEndpoint(walletNetwork);
 
                     wallet_subscriber = make_unique<WalletSubscriber>(static_cast<IWalletObserver*>(this), wallet);
 
-                    nodeNetwork->m_nodeAddrStr = m_nodeAddrStr;
-                    nodeNetwork->tryToConnect();
+#ifdef BEAM_ATOMIC_SWAP_SUPPORT
+                    using WalletDbSubscriber = ScopedSubscriber<wallet::IWalletDbObserver, wallet::IWalletDB>;
+                    using SwapOffersBoardSubscriber = ScopedSubscriber<wallet::ISwapOffersObserver, wallet::SwapOffersBoard>;
 
-                    m_reactor->run();
+                    std::unique_ptr<WalletDbSubscriber> walletDbSubscriber;
+                    std::unique_ptr<SwapOffersBoardSubscriber> swapOffersBoardSubscriber;
+
+                    auto offersBulletinBoard = make_shared<SwapOffersBoard>(*nodeNetwork, *walletNetwork);
+                    m_offersBulletinBoard = offersBulletinBoard;
+
+                    walletDbSubscriber = make_unique<WalletDbSubscriber>(static_cast<IWalletDbObserver*>(offersBulletinBoard.get()), m_walletDB);
+                    swapOffersBoardSubscriber = make_unique<SwapOffersBoardSubscriber>(static_cast<ISwapOffersObserver*>(this), offersBulletinBoard);
+#endif
+
+                    nodeNetwork->tryToConnect();
+                    m_reactor->run_ex([&wallet, &nodeNetwork](){
+                        wallet->CleanupNetwork();
+                        nodeNetwork->Disconnect();
+                    });
+
+                    assert(walletNetwork.use_count() == 1);
+                    walletNetwork.reset();
+
+                    assert(nodeNetwork.use_count() == 1);
+                    nodeNetwork.reset();
                 }
                 catch (const runtime_error& ex)
                 {
@@ -407,25 +443,37 @@ namespace beam::wallet
 
     bool WalletClient::isFork1() const
     {
-        return m_walletDB->getCurrentHeight() >= Rules::get().pForks[1].m_Height;
+        return m_currentHeight >= Rules::get().pForks[1].m_Height;
+    }
+
+    size_t WalletClient::getUnsafeActiveTransactionsCount() const
+    {
+        return m_unsafeActiveTxCount;
+    }
+
+    bool WalletClient::isConnectionTrusted() const
+    {
+        return m_isConnectionTrusted;
     }
 
     void WalletClient::onCoinsChanged()
     {
         onAllUtxoChanged(getUtxos());
-        // TODO may be it needs to delete
+        // TODO: refactor this
+        // We should call getStatus to update balances
         onStatus(getStatus());
     }
 
-    void WalletClient::onTransactionChanged(ChangeAction action, std::vector<TxDescription>&& items)
+    void WalletClient::onTransactionChanged(ChangeAction action, const std::vector<TxDescription>& items)
     {
-        onTxStatus(action, move(items));
-        onStatus(getStatus());
+        onTxStatus(action, items);
+        updateClientTxState();
     }
 
-    void WalletClient::onSystemStateChanged()
+    void WalletClient::onSystemStateChanged(const Block::SystemState::ID& stateID)
     {
         onStatus(getStatus());
+        updateClientState();
     }
 
     void WalletClient::onAddressChanged(ChangeAction action, const std::vector<WalletAddress>& items)
@@ -440,21 +488,32 @@ namespace beam::wallet
         onSyncProgressUpdated(done, total);
     }
 
+    void WalletClient::onOwnedNode(const PeerID& id, bool connected)
+    {
+        updateConnectionTrust(connected);
+        onNodeConnectionChanged(isConnected());
+    }
+
     void WalletClient::sendMoney(const WalletID& receiver, const std::string& comment, Amount&& amount, Amount&& fee)
     {
         try
         {
-            WalletAddress senderAddress = storage::createAddress(*m_walletDB);
-            senderAddress.m_label = comment;
-            saveAddress(senderAddress, true); // should update the wallet_network
-
-            ByteBuffer message(comment.begin(), comment.end());
-
             assert(!m_wallet.expired());
             auto s = m_wallet.lock();
             if (s)
             {
-                s->transfer_money(senderAddress.m_walletID, receiver, move(amount), move(fee), true, kDefaultTxLifetime, kDefaultTxResponseTime, move(message), true);
+                WalletAddress senderAddress = storage::createAddress(*m_walletDB, m_keyKeeper);
+                saveAddress(senderAddress, true); // should update the wallet_network
+
+                ByteBuffer message(comment.begin(), comment.end());
+
+
+                s->StartTransaction(CreateSimpleTransactionParameters()
+                    .SetParameter(TxParameterID::MyID, senderAddress.m_walletID)
+                    .SetParameter(TxParameterID::PeerID, receiver)
+                    .SetParameter(TxParameterID::Amount, amount)
+                    .SetParameter(TxParameterID::Fee, fee)
+                    .SetParameter(TxParameterID::Message, message));
             }
 
             onSendMoneyVerified();
@@ -482,13 +541,58 @@ namespace beam::wallet
     {
         try
         {
-            ByteBuffer message(comment.begin(), comment.end());
-
             assert(!m_wallet.expired());
             auto s = m_wallet.lock();
             if (s)
             {
-                s->transfer_money(sender, receiver, move(amount), move(fee), true, kDefaultTxLifetime, kDefaultTxResponseTime, move(message), true);
+                ByteBuffer message(comment.begin(), comment.end());
+                s->StartTransaction(CreateSimpleTransactionParameters()
+                    .SetParameter(TxParameterID::MyID, sender)
+                    .SetParameter(TxParameterID::PeerID, receiver)
+                    .SetParameter(TxParameterID::Amount, amount)
+                    .SetParameter(TxParameterID::Fee, fee)
+                    .SetParameter(TxParameterID::Message, message));
+            }
+
+            onSendMoneyVerified();
+        }
+        catch (const CannotGenerateSecretException&)
+        {
+            onNewAddressFailed();
+            return;
+        }
+        catch (const AddressExpiredException&)
+        {
+            onCantSendToExpired();
+            return;
+        }
+        catch (const std::exception& e)
+        {
+            LOG_UNHANDLED_EXCEPTION() << "what = " << e.what();
+        }
+        catch (...) {
+            LOG_UNHANDLED_EXCEPTION();
+        }
+    }
+
+    void WalletClient::startTransaction(TxParameters&& parameters)
+    {
+        try
+        {
+            assert(!m_wallet.expired());
+            auto s = m_wallet.lock();
+            if (s)
+            {
+                auto myID = parameters.GetParameter<WalletID>(TxParameterID::MyID);
+                if (!myID)
+                {
+                    WalletAddress senderAddress = storage::createAddress(*m_walletDB, m_keyKeeper);
+                    saveAddress(senderAddress, true); // should update the wallet_network
+                
+                    parameters.SetParameter(TxParameterID::MyID, senderAddress.m_walletID);
+                }
+
+                s->StartTransaction(parameters);
             }
 
             onSendMoneyVerified();
@@ -541,13 +645,15 @@ namespace beam::wallet
     void WalletClient::getWalletStatus()
     {
         onStatus(getStatus());
-        onTxStatus(ChangeAction::Reset, m_walletDB->getTxHistory());
-        onAddresses(false, m_walletDB->getAddresses(false));
+    }
+
+    void WalletClient::getTransactions()
+    {
+        onTxStatus(ChangeAction::Reset, m_walletDB->getTxHistory(wallet::TxType::ALL));
     }
 
     void WalletClient::getUtxosStatus()
     {
-        onStatus(getStatus());
         onAllUtxoChanged(getUtxos());
     }
 
@@ -556,12 +662,30 @@ namespace beam::wallet
         onAddresses(own, m_walletDB->getAddresses(own));
     }
 
+#ifdef BEAM_ATOMIC_SWAP_SUPPORT
+    void WalletClient::getSwapOffers()
+    {
+        if (auto p = m_offersBulletinBoard.lock())
+        {
+            onSwapOffersChanged(ChangeAction::Reset, p->getOffersList());
+        }
+    }
+
+    void WalletClient::publishSwapOffer(const SwapOffer& offer)
+    {
+        if (auto p = m_offersBulletinBoard.lock())
+        {
+            p->publishOffer(offer);
+        }
+    }
+#endif
+
     void WalletClient::cancelTx(const TxID& id)
     {
         auto w = m_wallet.lock();
         if (w)
         {
-            static_pointer_cast<IWallet>(w)->cancel_tx(id);
+            w->CancelTransaction(id);
         }
     }
 
@@ -570,7 +694,7 @@ namespace beam::wallet
         auto w = m_wallet.lock();
         if (w)
         {
-            static_pointer_cast<IWallet>(w)->delete_tx(id);
+            w->DeleteTransaction(id);
         }
     }
 
@@ -593,9 +717,13 @@ namespace beam::wallet
     {
         try
         {
-            WalletAddress address = storage::createAddress(*m_walletDB);
+            WalletAddress address = storage::createAddress(*m_walletDB, m_keyKeeper);
 
             onGeneratedNewAddress(address);
+        }
+        catch (const TrezorKeyKeeper::DeviceNotConnected&)
+        {
+            onNoDeviceConnected();
         }
         catch (const CannotGenerateSecretException&)
         {
@@ -608,6 +736,22 @@ namespace beam::wallet
         catch (...) {
             LOG_UNHANDLED_EXCEPTION();
         }
+    }
+
+    namespace {
+        const char* SWAP_PARAMS_NAME = "LastSwapParams";
+    }
+
+    void WalletClient::loadSwapParams()
+    {
+        ByteBuffer params;
+        m_walletDB->getBlob(SWAP_PARAMS_NAME, params);
+        onSwapParamsLoaded(params);
+    }
+
+    void WalletClient::storeSwapParams(const ByteBuffer& params)
+    {
+        m_walletDB->setVarRaw(SWAP_PARAMS_NAME, params.data(), params.size());
     }
 
     void WalletClient::deleteAddress(const WalletID& id)
@@ -629,7 +773,7 @@ namespace beam::wallet
         }
     }
 
-    void WalletClient::saveAddressChanges(const WalletID& id, const std::string& name, bool makeEternal, bool makeActive, bool makeExpired)
+    void WalletClient::updateAddress(const WalletID& id, const std::string& name, WalletAddress::ExpirationStatus status)
     {
         try
         {
@@ -637,29 +781,13 @@ namespace beam::wallet
 
             if (addr)
             {
-                if (addr->m_OwnID)
+                if (addr->m_OwnID &&
+                    status != WalletAddress::ExpirationStatus::AsIs)
                 {
-                    addr->setLabel(name);
-                    if (makeExpired)
-                    {
-                        addr->makeExpired();
-                    }
-                    else if (makeEternal)
-                    {
-                        addr->makeEternal();
-                    }
-                    else if (makeActive)
-                    {
-                        // set expiration date to 24h since now
-                        addr->makeActive(24 * 60 * 60);
-                    }
-
-                    m_walletDB->saveAddress(*addr);
+                    addr->setExpiration(status);
                 }
-                else
-                {
-                    LOG_ERROR() << "It's not implemented!";
-                }
+                addr->setLabel(name);
+                m_walletDB->saveAddress(*addr);
             }
             else
             {
@@ -709,13 +837,13 @@ namespace beam::wallet
 
     void WalletClient::getNetworkStatus()
     {
-        if (m_walletError.is_initialized() && !m_isConnected)
+        if (m_walletError.is_initialized() && !isConnected())
         {
             onWalletError(*m_walletError);
             return;
         }
 
-        onNodeConnectionChanged(m_isConnected);
+        onNodeConnectionChanged(isConnected());
     }
 
     void WalletClient::refresh()
@@ -733,7 +861,8 @@ namespace beam::wallet
         {
             LOG_UNHANDLED_EXCEPTION() << "what = " << e.what();
         }
-        catch (...) {
+        catch (...)
+        {
             LOG_UNHANDLED_EXCEPTION();
         }
     }
@@ -750,12 +879,59 @@ namespace beam::wallet
         onAddressChecked(addr, nodeAddr.resolve(addr.c_str()));
     }
 
+    void WalletClient::importRecovery(const std::string& path)
+    {
+        try
+        {
+            m_walletDB->ImportRecovery(path, *this);
+            return;
+        }
+        catch (const std::runtime_error& e)
+        {
+            LOG_UNHANDLED_EXCEPTION() << "what = " << e.what();
+        }
+        catch (...) 
+        {
+            LOG_UNHANDLED_EXCEPTION();
+        }
+        onWalletError(ErrorType::ImportRecoveryError);
+    }
+
+    void WalletClient::importDataFromJson(const std::string& data)
+    {
+        auto isOk = storage::ImportDataFromJson(*m_walletDB, m_keyKeeper, data.data(), data.size());
+
+        onImportDataFromJson(isOk);
+    }
+
+    void WalletClient::exportDataToJson()
+    {
+        auto data = storage::ExportDataToJson(*m_walletDB);
+
+        onExportDataToJson(data);
+    }
+
+    void WalletClient::exportTxHistoryToCsv()
+    {
+        auto data = storage::ExportTxHistoryToCsv(*m_walletDB);
+
+        onExportTxHistoryToCsv(data);   
+    }
+
+    bool WalletClient::OnProgress(uint64_t done, uint64_t total)
+    {
+        onImportRecoveryProgress(done, total);
+        return true;
+    }
+
     WalletStatus WalletClient::getStatus() const
     {
         WalletStatus status;
         storage::Totals totals(*m_walletDB);
 
         status.available = totals.Avail;
+        status.receivingIncoming = totals.ReceivingIncoming;
+        status.receivingChange = totals.ReceivingChange;
         status.receiving = totals.Incoming;
         status.sending = totals.Outgoing;
         status.maturing = totals.Maturing;
@@ -771,7 +947,7 @@ namespace beam::wallet
     vector<Coin> WalletClient::getUtxos() const
     {
         vector<Coin> utxos;
-        m_walletDB->visit([&utxos](const Coin& c)->bool
+        m_walletDB->visitCoins([&utxos](const Coin& c)->bool
             {
                 utxos.push_back(c);
                 return true;
@@ -781,8 +957,6 @@ namespace beam::wallet
 
     void WalletClient::nodeConnectionFailed(const proto::NodeConnection::DisconnectReason& reason)
     {
-        m_isConnected = false;
-
         // reason -> ErrorType
         if (proto::NodeConnection::DisconnectReason::ProcessingExc == reason.m_Type)
         {
@@ -803,7 +977,59 @@ namespace beam::wallet
 
     void WalletClient::nodeConnectedStatusChanged(bool isNodeConnected)
     {
-        m_isConnected = isNodeConnected;
-        onNodeConnectionChanged(isNodeConnected);
+        if (isNodeConnected)
+        {
+            ++m_connectedNodesCount;
+        }
+        else if (m_connectedNodesCount)
+        {
+            --m_connectedNodesCount;
+        }
+
+        onNodeConnectionChanged(isConnected());
+    }
+
+    void WalletClient::updateClientState()
+    {
+        if (auto w = m_wallet.lock(); w)
+        {
+            postFunctionToClientContext([this, currentHeight = m_walletDB->getCurrentHeight(), count = w->GetUnsafeActiveTransactionsCount()]()
+            {
+                m_currentHeight = currentHeight;
+                m_unsafeActiveTxCount = count;
+            });
+        }
+    }
+    void WalletClient::updateClientTxState()
+    {
+        if (auto w = m_wallet.lock(); w)
+        {
+            postFunctionToClientContext([this, count = w->GetUnsafeActiveTransactionsCount()]()
+            {
+                m_unsafeActiveTxCount = count;
+            });
+        }
+    }
+
+    void WalletClient::updateConnectionTrust(bool trustedConnected)
+    {
+        if (trustedConnected)
+        {
+            ++m_trustedConnectionCount;
+        }
+        else if (m_trustedConnectionCount)
+        {
+            --m_trustedConnectionCount;
+        }
+
+        postFunctionToClientContext([this, isTrusted = m_trustedConnectionCount > 0 && m_trustedConnectionCount == m_connectedNodesCount]()
+        {
+            m_isConnectionTrusted = isTrusted;
+        });
+    }
+
+    bool WalletClient::isConnected() const
+    {
+        return m_connectedNodesCount > 0;
     }
 }

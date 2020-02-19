@@ -26,8 +26,12 @@ namespace beam::wallet
 {
     class BaseTxBuilder;
 
+    TxParameters CreateSimpleTransactionParameters(const boost::optional<TxID>& txId = boost::none);
+    TxParameters CreateSplitTransactionParameters(const WalletID& myID, const AmountList& amountList, const boost::optional<TxID>& txId = boost::none);
+
     class SimpleTransaction : public BaseTransaction
     {
+    public:
         enum State : uint8_t
         {
             Initial,
@@ -40,11 +44,20 @@ namespace beam::wallet
             KernelConfirmation,
             OutputsConfirmation
         };
-    public:
-        static BaseTransaction::Ptr Create(INegotiatorGateway& gateway
-                                    , IWalletDB::Ptr walletDB
-                                    , IPrivateKeyKeeper::Ptr keyKeeper
-                                    , const TxID& txID);
+
+        class Creator : public BaseTransaction::Creator
+        {
+        public:
+            Creator(IWalletDB::Ptr walletDB);
+        private:
+            BaseTransaction::Ptr Create(INegotiatorGateway& gateway
+                                      , IWalletDB::Ptr walletDB
+                                      , IPrivateKeyKeeper::Ptr keyKeeper
+                                      , const TxID& txID) override;
+            TxParameters CheckAndCompleteParameters(const TxParameters& parameters) override;
+        private:
+            IWalletDB::Ptr m_WalletDB;
+        };
     private:
         SimpleTransaction(INegotiatorGateway& gateway
                         , IWalletDB::Ptr walletDB
@@ -52,6 +65,7 @@ namespace beam::wallet
                         , const TxID& txID);
     private:
         TxType GetType() const override;
+        bool IsInSafety() const override;
         void UpdateImpl() override;
         bool ShouldNotifyAboutChanges(TxParameterID paramID) const override;
         void SendInvitation(const BaseTxBuilder& builder, bool isSender);

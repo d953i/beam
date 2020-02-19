@@ -105,6 +105,12 @@ namespace beam::wallet
         {
             outputCoin = m_Tx.GetWalletDB()->generateSharedCoin(GetAmount());
             m_Tx.SetParameter(TxParameterID::SharedCoinID, outputCoin.m_ID, m_SubTxID);
+
+            if (m_SubTxID == SubTxIndex::BEAM_REDEEM_TX)
+            {
+                outputCoin.m_createTxId = m_Tx.GetTxID();
+                m_Tx.GetWalletDB()->saveCoin(outputCoin);
+            }
         }
 
 		Height minHeight = 0;
@@ -125,8 +131,8 @@ namespace beam::wallet
         Height minHeight = 0;
         if (!m_Tx.GetParameter(TxParameterID::MinHeight, minHeight, m_SubTxID))
         {
-            // Get MinHeight from main TX
-            minHeight = m_Tx.GetMandatoryParameter<Height>(TxParameterID::MinHeight);
+            // Get MinHeight from Lock TX
+            minHeight = m_Tx.GetMandatoryParameter<Height>(TxParameterID::MinHeight, SubTxIndex::BEAM_LOCK_TX);
 
             if (SubTxIndex::BEAM_REFUND_TX == m_SubTxID)
             {

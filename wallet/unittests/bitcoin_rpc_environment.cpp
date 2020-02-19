@@ -14,7 +14,6 @@
 
 #include "utility/logger.h"
 #include "utility/io/timer.h"
-//#include "utility/io/tcpserver.h"
 #include "http/http_connection.h"
 #include "http/http_msg_creator.h"
 #include "utility/helpers.h"
@@ -28,17 +27,6 @@ const std::string btcPass = "123";
 
 using namespace beam;
 using json = nlohmann::json;
-
-namespace
-{
-    // TODO roman.strilec: temporary solution
-    std::string generateAuthorization(const std::string& userName, const std::string& pass)
-    {
-        std::string userWithPass(userName + ":" + pass);
-        libbitcoin::data_chunk t(userWithPass.begin(), userWithPass.end());
-        return std::string("Basic " + libbitcoin::encode_base64(t));
-    }
-}
 
 class BitcoinHttpServer
 {
@@ -58,11 +46,6 @@ public:
     }
 
 protected:
-
-    virtual std::string dumpPrivKey()
-    {
-        return R"({"result":"cTZEjMtL96FyC43AxEvUxbs3pinad2cH8wvLeeCYNUwPURqeknkG","error":null,"id":null})";
-    }
 
     virtual std::string fundRawTransaction()
     {
@@ -104,13 +87,21 @@ protected:
         return R"({"result":12684.40000000,"error":null,"id":null})";
     }
 
+    virtual std::string getGenesisBlockHash()
+    {
+#if defined(BEAM_MAINNET) || defined(SWAP_MAINNET)
+        return R"( {"result":"000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f","error":null,"id":"verify"})";
+#else
+        return R"( {"result":"0f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206","error":null,"id":"verify"})";
+#endif
+    }
+
 private:
 
     void onStreamAccepted(io::TcpStream::Ptr&& newStream, io::ErrorCode errorCode)
     {
         if (errorCode == 0)
         {
-            LOG_DEBUG() << "Stream accepted";
             uint64_t peerId = m_lastId++;
             m_connections[peerId] = std::make_unique<HttpConnection>(
                 peerId,
@@ -138,8 +129,9 @@ private:
 
         std::string result;
         int responseStatus = 200;
+        bitcoin::BitcoinCoreSettings settings{ m_userName, m_pass, io::Address{} };
 
-        if (msg.msg->get_header("Authorization") == generateAuthorization(m_userName, m_pass))
+        if (msg.msg->get_header("Authorization") == settings.generateAuthorization())
         {
             size_t sz = 0;
             const void* rawReq = msg.msg->get_body(sz);
@@ -189,8 +181,6 @@ private:
         json j = json::parse(msg);
         if (j["method"] == "getbalance")
             return getBalance();
-        else if (j["method"] == "dumpprivkey")
-            return dumpPrivKey();
         else if (j["method"] == "fundrawtransaction")
             return fundRawTransaction();
         else if (j["method"] == "signrawtransaction")
@@ -205,6 +195,8 @@ private:
             return getTxOut();
         else if (j["method"] == "getblockcount")
             return getBlockCount();
+        else if (j["method"] == "getblockhash")
+            return getGenesisBlockHash();
         return "";
     }
 

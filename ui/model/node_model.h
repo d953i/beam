@@ -44,18 +44,24 @@ public:
     bool isNodeRunning() const;
 
 signals:
+    void initProgressUpdated(quint64 done, quint64 total);
     void syncProgressUpdated(int done, int total);
     void startedNode();
     void stoppedNode();
     void failedToStartNode(beam::wallet::ErrorType errorType);
     void failedToSyncNode(beam::wallet::ErrorType errorType);
+    void createdNode();
+    void destroyedNode();
 
 protected:
+    void onInitProgressUpdated(uint64_t done, uint64_t total) override;
     void onSyncProgressUpdated(int done, int total) override;
     void onStartedNode() override;
     void onStoppedNode() override;
     void onFailedToStartNode(beam::io::ErrorCode errorCode) override;
     void onSyncError(beam::Node::IObserver::Error error) override;
+    void onNodeCreated() override;
+    void onNodeDestroyed() override;
 
     uint16_t getLocalNodePort() override;
     std::string getLocalNodeStorage() override;

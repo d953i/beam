@@ -10,18 +10,21 @@ matrix:
 
     - os: osx
       language: cpp
-      osx_image: xcode9.3
+      osx_image: xcode10.1
       install: 
         - export TZ=Etc/GMT-3
         - brew update
         - brew unlink cmake
-        - brew unlink boost
-        - brew install cmake boost
+        - brew install cmake
+        - brew link cmake
+        - brew uninstall --ignore-dependencies qt boost
         - curl -O https://raw.githubusercontent.com/Homebrew/homebrew-core/56c500b569c724b049be7ab9e12d9693f85522f9/Formula/qt.rb
         - brew install ./qt.rb
         - brew link qt5 --force
+        - curl -O https://raw.githubusercontent.com/Homebrew/homebrew-core/5da5895add2f6b9320d654dd844d4827f6876c8b/Formula/boost.rb
+        - brew install ./boost.rb
         - export PATH=/usr/local/opt/qt/bin:$PATH
-        - export OPENSSL_ROOT_DIR="/usr/local/opt/openssl"
+        - export OPENSSL_ROOT_DIR="/usr/local/opt/openssl@1.1"
       env: 
         - BUILD_TYPE=Debug
         - OS_FOLDER=mac
@@ -46,11 +49,14 @@ matrix:
         - export TZ=Etc/GMT-3
         - brew update
         - brew unlink cmake
-        - brew unlink boost 
-        - brew install cmake boost
+        - brew install cmake
+        - brew link cmake
         - sudo git clone --depth=1 https://github.com/nesbox/qt5-static-mac.git /usr/local/qt5-static
+        - brew uninstall --ignore-dependencies qt boost
+        - curl -O https://raw.githubusercontent.com/Homebrew/homebrew-core/5da5895add2f6b9320d654dd844d4827f6876c8b/Formula/boost.rb
+        - brew install ./boost.rb
+        - export OPENSSL_ROOT_DIR="/usr/local/opt/openssl@1.1"
         - export PATH=/usr/local/qt5-static/bin:$PATH
-        - export OPENSSL_ROOT_DIR="/usr/local/opt/openssl"
         - export QT5_ROOT_DIR="/usr/local/qt5-static"
         - export QML_IMPORT_PATH="/usr/local/qt5-static/qml"
         - openssl aes-256-cbc -K $encrypted_1f9ebee66ea9_key -iv $encrypted_1f9ebee66ea9_iv -in macos_cert.enc -out macos_cert.tar -d
@@ -89,6 +95,7 @@ matrix:
 ###############################################################################
 
     - os: linux
+      dist: trusty
       language: cpp
       addons:
         apt:
@@ -114,7 +121,7 @@ matrix:
         - export BOOST_ROOT="/usr/local/boost_1_69_0"
         - sudo add-apt-repository ppa:beineri/opt-qt-5.10.1-trusty -y
         - sudo apt-get update
-        - sudo apt-get install qt510declarative qt510svg libgl1-mesa-dev-lts-xenial
+        - sudo apt-get install qt510declarative qt510svg qttools5-dev libgl1-mesa-dev-lts-trusty
         - eval "CC=gcc-7 && CXX=g++-7"
         - export PATH=/opt/qt510/bin:$PATH
       env: 
@@ -134,6 +141,7 @@ matrix:
 ###############################################################################
 
     - os: linux
+      dist: trusty
       language: cpp
       addons:
         apt:
@@ -184,6 +192,7 @@ matrix:
 ###############################################################################
 
     - os: linux
+      dist: trusty
       language: android
       env:
         - ANDROID_ABI=x86
@@ -196,8 +205,14 @@ matrix:
           - android-23
       install:
         - echo y | sdkmanager "ndk-bundle"
-        - wget "https://cmake.org/files/v3.12/cmake-3.12.0-Linux-x86_64.sh"
-        - sudo sh cmake-3.12.0-Linux-x86_64.sh --skip-license --prefix=/usr
+        - DEPS_DIR="${TRAVIS_BUILD_DIR}/deps"
+        - mkdir ${DEPS_DIR} && cd ${DEPS_DIR}
+        - travis_retry wget --no-check-certificate https://github.com/Kitware/CMake/releases/download/v3.14.0/cmake-3.14.0-Linux-x86_64.tar.gz
+        - tar -xvf cmake-3.14.0-Linux-x86_64.tar.gz > /dev/null
+        - mv cmake-3.14.0-Linux-x86_64 cmake-install
+        - PATH=${DEPS_DIR}/cmake-install:${DEPS_DIR}/cmake-install/bin:$PATH
+        - cd ${TRAVIS_BUILD_DIR}
+        - cmake --version
         - sudo git clone --depth=1 https://github.com/BeamMW/boost-android.git /usr/local/boost_1_68-android
         - sudo git clone --depth=1 https://github.com/BeamMW/openssl-android.git /usr/local/Prebuilt-OpenSSL-Android
         - export ANDROID_NDK_HOME=$ANDROID_HOME/ndk-bundle
@@ -225,6 +240,7 @@ matrix:
 ###############################################################################
 
     - os: linux
+      dist: trusty
       language: android
       env:
         - ANDROID_ABI=x86_64
@@ -237,8 +253,14 @@ matrix:
           - android-23
       install:
         - echo y | sdkmanager "ndk-bundle"
-        - wget "https://cmake.org/files/v3.12/cmake-3.12.0-Linux-x86_64.sh"
-        - sudo sh cmake-3.12.0-Linux-x86_64.sh --skip-license --prefix=/usr
+        - DEPS_DIR="${TRAVIS_BUILD_DIR}/deps"
+        - mkdir ${DEPS_DIR} && cd ${DEPS_DIR}
+        - travis_retry wget --no-check-certificate https://github.com/Kitware/CMake/releases/download/v3.14.0/cmake-3.14.0-Linux-x86_64.tar.gz
+        - tar -xvf cmake-3.14.0-Linux-x86_64.tar.gz > /dev/null
+        - mv cmake-3.14.0-Linux-x86_64 cmake-install
+        - PATH=${DEPS_DIR}/cmake-install:${DEPS_DIR}/cmake-install/bin:$PATH
+        - cd ${TRAVIS_BUILD_DIR}
+        - cmake --version
         - sudo git clone --depth=1 https://github.com/BeamMW/boost-android.git /usr/local/boost_1_68-android
         - sudo git clone --depth=1 https://github.com/BeamMW/openssl-android.git /usr/local/Prebuilt-OpenSSL-Android
         - export ANDROID_NDK_HOME=$ANDROID_HOME/ndk-bundle
@@ -266,6 +288,7 @@ matrix:
 ###############################################################################
 
     - os: linux
+      dist: trusty
       language: android
       env:
         - ANDROID_ABI=armeabi-v7a
@@ -278,8 +301,14 @@ matrix:
           - android-23
       install:
         - echo y | sdkmanager "ndk-bundle"
-        - wget "https://cmake.org/files/v3.12/cmake-3.12.0-Linux-x86_64.sh"
-        - sudo sh cmake-3.12.0-Linux-x86_64.sh --skip-license --prefix=/usr
+        - DEPS_DIR="${TRAVIS_BUILD_DIR}/deps"
+        - mkdir ${DEPS_DIR} && cd ${DEPS_DIR}
+        - travis_retry wget --no-check-certificate https://github.com/Kitware/CMake/releases/download/v3.14.0/cmake-3.14.0-Linux-x86_64.tar.gz
+        - tar -xvf cmake-3.14.0-Linux-x86_64.tar.gz > /dev/null
+        - mv cmake-3.14.0-Linux-x86_64 cmake-install
+        - PATH=${DEPS_DIR}/cmake-install:${DEPS_DIR}/cmake-install/bin:$PATH
+        - cd ${TRAVIS_BUILD_DIR}
+        - cmake --version
         - sudo git clone --depth=1 https://github.com/BeamMW/boost-android.git /usr/local/boost_1_68-android
         - sudo git clone --depth=1 https://github.com/BeamMW/openssl-android.git /usr/local/Prebuilt-OpenSSL-Android
         - export ANDROID_NDK_HOME=$ANDROID_HOME/ndk-bundle
@@ -307,6 +336,7 @@ matrix:
 ###############################################################################
 
     - os: linux
+      dist: trusty
       language: android
       env:
         - ANDROID_ABI=arm64-v8a
@@ -319,8 +349,14 @@ matrix:
           - android-23
       install:
         - echo y | sdkmanager "ndk-bundle"
-        - wget "https://cmake.org/files/v3.12/cmake-3.12.0-Linux-x86_64.sh"
-        - sudo sh cmake-3.12.0-Linux-x86_64.sh --skip-license --prefix=/usr
+        - DEPS_DIR="${TRAVIS_BUILD_DIR}/deps"
+        - mkdir ${DEPS_DIR} && cd ${DEPS_DIR}
+        - travis_retry wget --no-check-certificate https://github.com/Kitware/CMake/releases/download/v3.14.0/cmake-3.14.0-Linux-x86_64.tar.gz
+        - tar -xvf cmake-3.14.0-Linux-x86_64.tar.gz > /dev/null
+        - mv cmake-3.14.0-Linux-x86_64 cmake-install
+        - PATH=${DEPS_DIR}/cmake-install:${DEPS_DIR}/cmake-install/bin:$PATH
+        - cd ${TRAVIS_BUILD_DIR}
+        - cmake --version
         - sudo git clone --depth=1 https://github.com/BeamMW/boost-android.git /usr/local/boost_1_68-android
         - sudo git clone --depth=1 https://github.com/BeamMW/openssl-android.git /usr/local/Prebuilt-OpenSSL-Android
         - export ANDROID_NDK_HOME=$ANDROID_HOME/ndk-bundle
@@ -342,6 +378,31 @@ matrix:
         - curl --retry 3 --ftp-create-dirs -T libwallet-jni.tar.gz $BUILDS_SERVER_LATEST_PATH/
         - artifacts upload --target-paths "$TRAVIS_BRANCH/$(date +%Y.%m.%d)/$BUILD_TYPE/android-$ANDROID_ABI/" libwallet-jni-$BEAM_VERSION.tar.gz
         - artifacts upload --target-paths "$TRAVIS_BRANCH/latest/$BUILD_TYPE/android-$ANDROID_ABI/" libwallet-jni.tar.gz
+
+###############################################################################
+# Key Keeper Web Assembly Release
+###############################################################################
+
+    - os: linux
+      dist: bionic
+      language: cpp
+      env:
+        - TARGET_TYPE=wasm
+        - BUILD_TYPE=Release
+      sudo: required
+      services:
+        - docker
+      install:
+        - docker run -e BOOST_ROOT='/usr/local/boost_1_69_0' -dit --name emscripten -v $(pwd):/src trzeci/emscripten:sdk-incoming-64bit bash
+      script:
+        - docker exec -it emscripten git clone --depth=1 https://github.com/BeamMW/boost-linux.git /usr/local/boost_1_69_0
+        - docker exec -it emscripten emcmake cmake -DCMAKE_BUILD_TYPE=$BUILD_TYPE keykeeper
+        - docker exec -it emscripten make -j$(nproc)
+      after_success:
+        - tar -cvzf wasm-key-keeper.tar.gz wasm-key-keeper.* index.html
+        - BUILDS_SERVER_PATH=${BUILD_SERVER}/files/$TRAVIS_BRANCH/$(date +%Y.%m.%d)/$BUILD_TYPE/$TARGET_TYPE
+        - curl --retry 3 --ftp-create-dirs -T wasm-key-keeper.tar.gz $BUILDS_SERVER_PATH/
+        - artifacts upload --target-paths "$TRAVIS_BRANCH/$(date +%Y.%m.%d)/$BUILD_TYPE/$TARGET_TYPE/" wasm-key-keeper.tar.gz
 
 ###############################################################################
 # Common part

@@ -170,6 +170,16 @@ public class WalletListener
         System.out.println(">>>>>>>>>>>>>> async onStoppedNode() in Java");
     }
 
+    static void onNodeCreated()
+    {
+        System.out.println(">>>>>>>>>>>>>> async onNodeCreated() in Java");
+    }
+
+    static void onNodeDestroyed()
+    {
+        System.out.println(">>>>>>>>>>>>>> async onNodeDestroyed() in Java");
+    }
+
     static void onFailedToStartNode()
     {
         System.out.println(">>>>>>>>>>>>>> async onFailedToStartNode() in Java");
@@ -183,5 +193,20 @@ public class WalletListener
     static void onNodeThreadFinished()
     {
         System.out.println(">>>>>>>>>>> onNodeThreadFinished called");
+    }
+
+    static void onImportRecoveryProgress(long done, long total)
+    {
+        System.out.println(">>>>>>>>>>>>>> async onImportRecoveryProgress in Java [ " + done + " / " + total + " ]");
+    }
+
+    static void onImportDataFromJson(boolean isOk)
+    {
+        System.out.println(">>>>>>>>>>>>>> async onImportDataFromJson(" + isOk +") in Java");
+    }
+
+    static void onExportDataToJson(String data)
+    {
+        System.out.println(">>>>>>>>>>>>>> async onExportDataToJson(" + data +") in Java");
     }
 }

@@ -1,6 +1,7 @@
 import QtQuick 2.11
 import QtQuick.Controls 2.3
 import QtQuick.Layouts 1.11
+import Beam.Wallet 1.0
 import "."
 import "../utils.js" as Utils
 
@@ -37,12 +38,13 @@ Dialog {
 				//: Edit address dialog, expiration option, do not change
 				//% "Within 24 hours"
 				expirationOptionsForActive.model = [qsTrId("edit-addr-as-is-option"),].concat(expirationOptions);
+				expirationOptionsForActive.currentIndex = 0;
 			}
 		}
 	}
 
 	property var getExpirationTimeLabel: function() {
-		var localeName = parentModel.getLocaleName();
+		var localeName = BeamGlobals.getLocaleName();
 		if (isExpiredAddress) {
 			return addressItem
 				? Utils.formatDateTime(addressItem.expirationDate, localeName)
@@ -82,7 +84,7 @@ Dialog {
 
     background: Rectangle {
 		radius: 10
-        color: Style.background_second
+        color: Style.background_popup
         anchors.fill: parent
     }
 
@@ -98,7 +100,7 @@ Dialog {
 			Layout.preferredWidth: parent.width
 			Layout.alignment: Qt.AlignLeft
 			horizontalAlignment: Text.AlignHCenter
-			//: Edit addres dialog title
+			//: Edit address dialog title
 			//% "Edit address"
 			text: qsTrId("edit-addr-title")
 			color: Style.content_main
@@ -113,7 +115,7 @@ Dialog {
 
 			SFText {
 				Layout.preferredWidth: parent.width
-				//: Edit addres dialog, address label
+				//: Edit address dialog, address label
 				//% "Address ID"
 				text: qsTrId("edit-addr-addr-id")
 				color: Style.content_main
@@ -129,7 +131,7 @@ Dialog {
                 text: addressItem ? addressItem.address : ""
 				elide: Text.ElideLeft
 				copyMenuEnabled: true
-				onCopyText: parentModel.copyToClipboard(text)
+				onCopyText: BeamGlobals.copyToClipboard(text)
 			}
     	}
 
@@ -157,7 +159,7 @@ Dialog {
 
 			SFText {
 				id: expiresDateLabel
-				//: Edit addres dialog, expires label
+				//: Edit address dialog, expires label
 				//% "Expires"
 				text: qsTrId("edit-addr-expires-label")
 				color: Style.content_main
@@ -185,7 +187,7 @@ Dialog {
 				SFText {
 					Layout.preferredWidth: parent.width
 					Layout.alignment: Qt.AlignLeft | Qt.AlignTop
-					//: Edit addres dialog, expire now label
+					//: Edit address dialog, expire now label
 					//% "Now"
 					text: qsTrId("edit-addr-expire-now-label")
 					color: Style.content_secondary
@@ -210,7 +212,7 @@ Dialog {
 			CustomSwitch {
 				id: disactivate
 				Layout.alignment: Qt.AlignRight | Qt.AlignTop
-				//: Edit addres dialog, expire now switch
+				//: Edit address dialog, expire now switch
 				//% "Expire address now"
 				text: qsTrId("edit-addr-expire-now-switch")
 				font.pixelSize: 14
@@ -227,7 +229,7 @@ Dialog {
 			visible: isExpiredAddress
 
 			SFText {
-				//: Edit addres dialog, expiration time label
+				//: Edit address dialog, expiration time label
 				//% "Expired on "
 				text: qsTrId("edit-addr-expiration-time-label")
 				color: Style.content_secondary
@@ -269,7 +271,7 @@ Dialog {
 			CustomSwitch {
 				id: activate
 				Layout.alignment: Qt.AlignLeft
-				//: Edit addres dialog, expiration time label
+				//: Edit address dialog, expiration time label
 				//% "Activate address"
 				text: qsTrId("edit-addr-activate-addr-switch")
 				font.pixelSize: 14
@@ -284,9 +286,9 @@ Dialog {
 			}
 
 			SFText {
-				//: Edit addres dialog, expires label
-				//% "Expires"
 				id: expiresLabel
+				//: Edit address dialog, expires label
+				//% "Expires"
 				text: qsTrId("edit-addr-expires-label")
 				color: Style.content_main
 				Layout.alignment: Qt.AlignLeft
@@ -344,7 +346,7 @@ Dialog {
 			Item {
 				Layout.preferredHeight: 15
 				SFText {
-					//% "Address with same comment already exist"
+					//% "Address with the same comment already exists"
 					text: qsTrId("general-addr-comment-error")
 					color: Style.validator_error
 					font.pixelSize: 12
@@ -365,7 +367,7 @@ Dialog {
 
 			CustomButton {
 				Layout.preferredHeight: 40
-				//: Edit addres dialog, cancel button
+				//: Edit address dialog, cancel button
 				//% "Cancel"
 				text: qsTrId("general-cancel")
                 icon.source: "qrc:/assets/icon-cancel.svg"
@@ -382,7 +384,7 @@ Dialog {
 			PrimaryButton {
 				id: saveButton
 				Layout.preferredHeight: 40
-				//: Edit addres dialog, save button
+				//: Edit address dialog, save button
 				//% "Save"
 				text: qsTrId("edit-addr-save-button")
                 icon.source: "qrc:/assets/icon-done.svg"
@@ -405,36 +407,64 @@ Dialog {
 					}
                 }
                 onClicked: {
-					var isNever = false;
-					var makeActive = false;
-					var makeExpired = false;
+					var expirationStatus;
+					const expirationStatusEnum = {
+						Expired: 0,
+						OneDay: 1,
+						Never: 2,
+						AsIs: 3
+					}
 
 					if (rootControl.isExpiredAddress) {
-						isNever =
-							expirationOptionsForUnactive.currentIndex == 1;
-						makeActive = activate.checked;
+						if (activate.checked) {
+							switch(expirationOptionsForUnactive.currentIndex) {
+								case 0:
+									expirationStatus = expirationStatusEnum.OneDay;
+									break;
+								case 1:
+									expirationStatus = expirationStatusEnum.Never;
+									break;
+							}
+						}
 					}
 					else {
 						if (disactivate.checked) {
-							makeExpired = true;
+							expirationStatus = expirationStatusEnum.Expired;
 						} else if (isNeverExpired()) {
-							isNever = 
-								expirationOptionsForActive.currentIndex == 1;
-							makeActive =
-								expirationOptionsForActive.currentIndex == 0;
+							switch(expirationOptionsForActive.currentIndex) {
+								case 0:
+									expirationStatus = expirationStatusEnum.OneDay;
+									break;
+								case 1:
+									expirationStatus = expirationStatusEnum.Never;
+									break;
+							}
 						} else {
-							isNever =
-								expirationOptionsForActive.currentIndex == 2;
-							makeActive =
-								expirationOptionsForActive.currentIndex == 1;
+							switch(expirationOptionsForActive.currentIndex) {
+								case 1:
+									expirationStatus = expirationStatusEnum.OneDay;
+									break;
+								case 2:
+									expirationStatus = expirationStatusEnum.Never;
+									break;
+								default:
+									expirationStatus = expirationStatusEnum.AsIs;
+							}
 						}
 					}
-					parentModel.saveChanges(
-							addressID.text,
-							addressName.text,
-							isNever,
-							makeActive,
-							makeExpired);
+					// check if address expiration has been changed
+					if (!rootControl.isExpiredAddress &&
+							(disactivate.checked ||
+							 (expirationOptionsForActive.currentIndex != 0 && !isNeverExpired()) ||
+							 (expirationOptionsForActive.currentIndex != 1 && isNeverExpired()))
+					   ) {
+						if (parentModel.isAddressBusy(addressID.text)) {
+							// there are active transactions for this address
+                    		forbidEditAddressDialog.open();
+							return;
+						}
+					}
+					parentModel.saveChanges(addressID.text, addressName.text, expirationStatus);
 					rootControl.accepted();
                     rootControl.close();
                 }
@@ -444,5 +474,18 @@ Dialog {
 				Layout.fillWidth: true
 			}
 		}
+    }
+
+	ConfirmationDialog {
+        id:                 forbidEditAddressDialog
+        width:              460
+        //% "Edit address"
+        title:              qsTrId("addresses-edit-warning-title")
+        //% "There is active transaction that uses this address, therefore the address expiration cannot be changed."
+        text:               qsTrId("addresses-edit-warning-text")
+        //% "Ok"
+        okButtonText:       qsTrId("general-ok")
+        okButtonIconSource: "qrc:/assets/icon-done.svg"
+        cancelButtonVisible: false
     }
 }

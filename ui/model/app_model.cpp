@@ -13,15 +13,23 @@
 // limitations under the License.
 
 #include "app_model.h"
+#include "wallet/swaps/swap_transaction.h"
 #include "utility/common.h"
 #include "utility/logger.h"
-
+#include "utility/fsutils.h"
 #include <boost/filesystem.hpp>
 #include <QApplication>
 #include <QTranslator>
 
+#include "wallet/bitcoin/bitcoin.h"
+#include "wallet/litecoin/litecoin.h"
+#include "wallet/qtum/qtum.h"
+
+#include "keykeeper/local_private_key_keeper.h"
+
 #if defined(BEAM_HW_WALLET)
-#include "wallet/hw_wallet.h"
+#include "core/block_rw.h"
+#include "keykeeper/trezor_key_keeper.h"
 #endif
 
 using namespace beam;
@@ -29,41 +37,20 @@ using namespace beam::wallet;
 using namespace ECC;
 using namespace std;
 
-namespace
-{
-const char* kDefaultTranslationsPath = ":/translations";
-
-void RemoveFile(boost::filesystem::path path)
-{
-    boost::system::error_code error;
-    boost::filesystem::remove(path, error);
-    if (error)
-    {
-        LOG_ERROR() << error.message();
-    }
-}
-}
-
 AppModel* AppModel::s_instance = nullptr;
 
-AppModel* AppModel::getInstance()
+AppModel& AppModel::getInstance()
 {
     assert(s_instance != nullptr);
-    return s_instance;
+    return *s_instance;
 }
 
-AppModel::AppModel(WalletSettings& settings, QQmlApplicationEngine& qmlEngine)
+AppModel::AppModel(WalletSettings& settings)
     : m_settings{settings}
-    , m_qmlEngine{qmlEngine}
     , m_walletReactor(beam::io::Reactor::create())
-    , m_translator(make_unique<QTranslator>())
 {
     assert(s_instance == nullptr);
     s_instance = this;
-
-    loadTranslation();    
-    connect(&m_settings, SIGNAL(localeChanged()), SLOT(onLocaleChanged()));
-
     m_nodeModel.start();
 }
 
@@ -72,107 +59,230 @@ AppModel::~AppModel()
     s_instance = nullptr;
 }
 
-bool AppModel::createWallet(const SecString& seed, const SecString& pass)
+void AppModel::backupDB(const std::string& dbFilePath)
 {
-    auto dbFilePath = m_settings.getWalletStorage();
-    if (WalletDB::isInitialized(dbFilePath))
+    const auto wasInitialized = WalletDB::isInitialized(dbFilePath);
+    m_db.reset();
+
+    if (wasInitialized)
     {
         // it seems that we are trying to restore or login to another wallet.
-        // Rename existing db 
-        boost::filesystem::path p = dbFilePath;
-        boost::filesystem::path newName = dbFilePath + "_" + to_string(getTimestamp());
-        boost::filesystem::rename(p, newName);
+        // Rename/backup existing db
+        std::string newName = dbFilePath + "_" + to_string(getTimestamp());
+       
+        if (fsutils::rename(dbFilePath, newName))
+        {
+            m_walletDBBackupPath = newName;
+        }
     }
-    m_db = WalletDB::init(dbFilePath, pass, seed.hash(), m_walletReactor);
-    if (!m_db)
-        return false;
+}
 
+void AppModel::restoreDBFromBackup(const std::string& dbFilePath)
+{
+    const auto wasInitialized = WalletDB::isInitialized(dbFilePath);
+    m_db.reset();
+
+    if (!wasInitialized && !m_walletDBBackupPath.empty())
+    {
+        // Restore existing db
+        bool isBackupExist = fsutils::isExist(m_walletDBBackupPath);
+        if (!isBackupExist)
+        {
+            return;
+        }
+        fsutils::rename(m_walletDBBackupPath, dbFilePath);
+        m_walletDBBackupPath = {};
+    }
+}
+
+void AppModel::generateDefaultAddress()
+{
     // generate default address
-
-    WalletAddress address = storage::createAddress(*m_db);
+    WalletAddress address = storage::createAddress(*m_db, m_keyKeeper);
     address.m_label = "default";
     m_db->saveAddress(address);
+}
 
-    OnWalledOpened(pass);
+bool AppModel::createWallet(const SecString& seed, const SecString& pass)
+{
+    const auto dbFilePath = m_settings.getWalletStorage();
+    backupDB(dbFilePath);
+
+    m_db = WalletDB::init(dbFilePath, pass, seed.hash(), m_walletReactor);
+    if (!m_db) return false;
+
+    m_keyKeeper = std::make_shared<LocalPrivateKeyKeeper>(m_db, m_db->get_MasterKdf());
+
+    generateDefaultAddress();
+    onWalledOpened(pass);
+
     return true;
 }
+
+#if defined(BEAM_HW_WALLET)
+bool AppModel::createTrezorWallet(std::shared_ptr<ECC::HKdfPub> ownerKey, const beam::SecString& pass)
+{
+    const auto dbFilePath = m_settings.getTrezorWalletStorage();
+    backupDB(dbFilePath);
+
+    m_db = WalletDB::initWithTrezor(dbFilePath, ownerKey, pass, m_walletReactor);
+    if (!m_db) return false;
+
+    m_keyKeeper = std::make_shared<TrezorKeyKeeper>();
+
+    generateDefaultAddress();
+    onWalledOpened(pass);
+
+    return true;
+}
+#endif
 
 bool AppModel::openWallet(const beam::SecString& pass)
 {
-    m_db = WalletDB::open(m_settings.getWalletStorage(), pass, m_walletReactor);
-    if (!m_db)
-        return false;
+    assert(m_db == nullptr);
 
-    OnWalledOpened(pass);
-    return true;
+    try
+    {
+        if (WalletDB::isInitialized(m_settings.getWalletStorage()))
+        {
+            m_db = WalletDB::open(m_settings.getWalletStorage(), pass, m_walletReactor);
+            m_keyKeeper = std::make_shared<LocalPrivateKeyKeeper>(m_db, m_db->get_MasterKdf());
+        }
+#if defined(BEAM_HW_WALLET)
+        else if (WalletDB::isInitialized(m_settings.getTrezorWalletStorage()))
+        {
+            m_db = WalletDB::open(m_settings.getTrezorWalletStorage(), pass, m_walletReactor, true);
+            m_keyKeeper = std::make_shared<TrezorKeyKeeper>();
+        }
+#endif
+
+        if (!m_db)
+            return false;
+
+        onWalledOpened(pass);
+        return true;
+    }
+    catch (...)
+    {
+        // TODO: handle the reasons of failure
+    }
+
+    return false;
 }
 
-void AppModel::OnWalledOpened(const beam::SecString& pass)
+void AppModel::onWalledOpened(const beam::SecString& pass)
 {
     m_passwordHash = pass.hash();
     start();
 }
 
-void AppModel::resetWalletImpl()
+void AppModel::resetWallet()
 {
-    if(m_settings.getRunLocalNode()) {
-        disconnect(&m_nodeModel, SIGNAL(startedNode()), this, SLOT(startedNode()));
-        disconnect(&m_nodeModel, SIGNAL(failedToStartNode(beam::wallet::ErrorType)), this, SLOT(onFailedToStartNode(beam::wallet::ErrorType)));
-        disconnect(&m_nodeModel, SIGNAL(failedToSyncNode(beam::wallet::ErrorType)), this, SLOT(onFailedToStartNode(beam::wallet::ErrorType)));
-    }
-
-    assert(m_db);
-    m_db.reset();
-
-    assert(m_wallet.use_count() == 1);
-    assert(m_wallet);
-    m_wallet.reset();
-
-    try
+    if (m_nodeModel.isNodeRunning())
     {
-#ifdef WIN32
-        boost::filesystem::path walletDBPath{ Utf8toUtf16(getSettings().getWalletStorage().c_str()) };
-        boost::filesystem::path nodeDBPath{ Utf8toUtf16(getSettings().getLocalNodeStorage().c_str()) };
-#else
-        boost::filesystem::path walletDBPath{ getSettings().getWalletStorage() };
-        boost::filesystem::path nodeDBPath{ getSettings().getLocalNodeStorage() };
-#endif
-        RemoveFile(walletDBPath);
-        RemoveFile(nodeDBPath);
+        m_nsc.disconnect();
+
+        auto dconn = MakeConnectionPtr();
+        *dconn = connect(&m_nodeModel, &NodeModel::destroyedNode, [this, dconn]() {
+            QObject::disconnect(*dconn);
+            emit walletReset();
+        });
+
+        m_nodeModel.stopNode();
+        return;
     }
-    catch (std::exception &e)
-    {
-        LOG_ERROR() << e.what();
-    }
+
+    onResetWallet();
 }
 
-void AppModel::loadTranslation()
+void AppModel::onResetWallet()
 {
-    auto locale = m_settings.getLocale();
-    if (m_translator->load(locale, kDefaultTranslationsPath))
+    m_walletConnections.disconnect();
+
+    assert(m_wallet);
+    assert(m_wallet.use_count() == 1);
+    assert(m_db);
+
+    m_wallet.reset();
+    m_keyKeeper.reset();
+    m_bitcoinClient.reset();
+    m_litecoinClient.reset();
+    m_qtumClient.reset();
+
+    m_db.reset();
+
+    fsutils::remove(getSettings().getWalletStorage());
+
+#if defined(BEAM_HW_WALLET)
+    fsutils::remove(getSettings().getTrezorWalletStorage());
+#endif
+
+    fsutils::remove(getSettings().getLocalNodeStorage());
+
+    restoreDBFromBackup(getSettings().getWalletStorage());
+
+    emit walletResetCompleted();
+}
+
+void AppModel::startWallet()
+{
+    assert(!m_wallet->isRunning());
+
+    auto additionalTxCreators = std::make_shared<std::unordered_map<TxType, BaseTransaction::Creator::Ptr>>();
+    auto swapTransactionCreator = std::make_shared<beam::wallet::AtomicSwapTransaction::Creator>(m_db);
+
+    if (auto btcClient = getBitcoinClient(); btcClient)
     {
-        qApp->installTranslator(m_translator.get());
+        auto bitcoinBridgeCreator = [bridgeHolder = m_btcBridgeHolder, reactor = m_walletReactor, settingsProvider = btcClient]() -> bitcoin::IBridge::Ptr
+        {
+            return bridgeHolder->Get(*reactor, *settingsProvider);
+        };
+
+        auto btcSecondSideFactory = beam::wallet::MakeSecondSideFactory<BitcoinSide, bitcoin::IBridge, bitcoin::ISettingsProvider>(bitcoinBridgeCreator, *btcClient);
+        swapTransactionCreator->RegisterFactory(AtomicSwapCoin::Bitcoin, btcSecondSideFactory);
     }
-    else
+
+    if (auto ltcClient = getLitecoinClient(); ltcClient)
     {
-        LOG_WARNING() << "Can't load translation";
+        auto litecoinBridgeCreator = [bridgeHolder = m_ltcBridgeHolder, reactor = m_walletReactor, settingsProvider = ltcClient]() -> bitcoin::IBridge::Ptr
+        {
+            return bridgeHolder->Get(*reactor, *settingsProvider);
+        };
+
+        auto ltcSecondSideFactory = beam::wallet::MakeSecondSideFactory<LitecoinSide, bitcoin::IBridge, litecoin::ISettingsProvider>(litecoinBridgeCreator, *ltcClient);
+        swapTransactionCreator->RegisterFactory(AtomicSwapCoin::Litecoin, ltcSecondSideFactory);
     }
+
+    if (auto qtumClient = getQtumClient(); qtumClient)
+    {
+        auto qtumBridgeCreator = [bridgeHolder = m_qtumBridgeHolder, reactor = m_walletReactor, settingsProvider = qtumClient]() -> bitcoin::IBridge::Ptr
+        {
+            return bridgeHolder->Get(*reactor, *settingsProvider);
+        };
+
+        auto qtumSecondSideFactory = wallet::MakeSecondSideFactory<QtumSide, qtum::Electrum, qtum::ISettingsProvider>(qtumBridgeCreator, *qtumClient);
+        swapTransactionCreator->RegisterFactory(AtomicSwapCoin::Qtum, qtumSecondSideFactory);
+    }
+
+    additionalTxCreators->emplace(TxType::AtomicSwap, swapTransactionCreator);
+
+    m_wallet->start(additionalTxCreators);
 }
 
 void AppModel::applySettingsChanges()
 {
     if (m_nodeModel.isNodeRunning())
     {
+        m_nsc.disconnect();
         m_nodeModel.stopNode();
     }
 
     if (m_settings.getRunLocalNode())
     {
-        m_nodeModel.startNode();
+        startNode();
 
         io::Address nodeAddr = io::Address::LOCALHOST;
         nodeAddr.port(m_settings.getLocalNodePort());
-
         m_wallet->getAsync()->setNodeAddress(nodeAddr.str());
     }
     else
@@ -189,30 +299,26 @@ void AppModel::nodeSettingsChanged()
     {
         if (!m_wallet->isRunning())
         {
-            m_wallet->start();
+            startWallet();
         }
     }
 }
 
-void AppModel::startedNode()
+void AppModel::onStartedNode()
 {
-    if (m_wallet && !m_wallet->isRunning())
-    {
-        disconnect(
-            &m_nodeModel, SIGNAL(failedToSyncNode(beam::wallet::ErrorType)),
-            this, SLOT(onFailedToStartNode(beam::wallet::ErrorType)));
-        m_wallet->start();
-    }
-}
+    m_nsc.disconnect();
+    assert(m_wallet);
 
-void AppModel::stoppedNode()
-{
-    resetWalletImpl();
-    disconnect(&m_nodeModel, SIGNAL(stoppedNode()), this, SLOT(stoppedNode()));
+    if (!m_wallet->isRunning())
+    {
+        startWallet();
+    }
 }
 
 void AppModel::onFailedToStartNode(beam::wallet::ErrorType errorCode)
 {
+    m_nsc.disconnect();
+
     if (errorCode == beam::wallet::ErrorType::ConnectionAddrInUse && m_wallet)
     {
         emit m_wallet->walletError(errorCode);
@@ -230,68 +336,57 @@ void AppModel::onFailedToStartNode(beam::wallet::ErrorType errorCode)
     getMessages().addMessage(qtTrId("appmodel-failed-start-node"));
 }
 
-void AppModel::onLocaleChanged()
-{
-    qApp->removeTranslator(m_translator.get());
-    m_translator = make_unique<QTranslator>();
-    loadTranslation();
-    m_qmlEngine.retranslate();
-}
-
 void AppModel::start()
 {
-    // TODO(alex.starun): should be uncommented when HW detection will be done
+    m_walletConnections << connect(this, &AppModel::walletReset, this, &AppModel::onResetWallet);
 
-//#if defined(BEAM_HW_WALLET)
-//    {
-//        HWWallet hw;
-//        auto key = hw.getOwnerKeySync();
-//        
-//        LOG_INFO() << "Owner key" << key;
-//
-//        // TODO: password encryption will be removed
-//        std::string pass = "1";
-//        KeyString ks;
-//        ks.SetPassword(Blob(pass.data(), static_cast<uint32_t>(pass.size())));
-//
-//        ks.m_sRes = key;
-//
-//        std::shared_ptr<ECC::HKdfPub> pKdf = std::make_shared<ECC::HKdfPub>();
-//
-//        if (ks.Import(*pKdf))
-//        {
-//            m_nodeModel.setOwnerKey(pKdf);
-//        }
-//        else
-//        {
-//            LOG_ERROR() << "veiw key import failed";            
-//        }
-//    }
-//#else
-    m_nodeModel.setKdf(m_db->get_MasterKdf());
-//#endif
+    m_nodeModel.setOwnerKey(m_db->get_OwnerKdf());
 
-    std::string nodeAddrStr;
-
+    std::string nodeAddrStr = m_settings.getNodeAddress().toStdString();
     if (m_settings.getRunLocalNode())
     {
-        connect(&m_nodeModel, SIGNAL(startedNode()), SLOT(startedNode()));
-        connect(&m_nodeModel, SIGNAL(failedToStartNode(beam::wallet::ErrorType)), SLOT(onFailedToStartNode(beam::wallet::ErrorType)));
-        connect(&m_nodeModel, SIGNAL(failedToSyncNode(beam::wallet::ErrorType)), SLOT(onFailedToStartNode(beam::wallet::ErrorType)));
-
-        m_nodeModel.startNode();
-
         io::Address nodeAddr = io::Address::LOCALHOST;
         nodeAddr.port(m_settings.getLocalNodePort());
         nodeAddrStr = nodeAddr.str();
     }
+
+    InitBtcClient();
+    InitLtcClient();
+    InitQtumClient();
+
+    m_wallet = std::make_shared<WalletModel>(m_db, m_keyKeeper, nodeAddrStr, m_walletReactor);
+
+    if (m_settings.getRunLocalNode())
+    {
+        startNode();
+    }
     else
-        nodeAddrStr = m_settings.getNodeAddress().toStdString();
+    {
+        startWallet();
+    }
+}
 
-    m_wallet = std::make_shared<WalletModel>(m_db, nodeAddrStr, m_walletReactor);
+void AppModel::startNode()
+{
+    m_nsc
+        << connect(&m_nodeModel, &NodeModel::startedNode, this, &AppModel::onStartedNode)
+        << connect(&m_nodeModel, &NodeModel::failedToStartNode, this, &AppModel::onFailedToStartNode)
+        << connect(&m_nodeModel, &NodeModel::failedToSyncNode, this, &AppModel::onFailedToStartNode);
 
-    if (!m_settings.getRunLocalNode())
-        m_wallet->start();
+    m_nodeModel.startNode();
+}
+
+bool AppModel::checkWalletPassword(const beam::SecString& pass) const
+{
+    auto passwordHash = pass.hash();
+    return passwordHash.V == m_passwordHash.V;
+}
+
+void AppModel::changeWalletPassword(const std::string& pass)
+{
+    beam::SecString t = pass;
+    m_passwordHash.V = t.hash().V;
+    m_wallet->getAsync()->changeWalletPassword(pass);
 }
 
 WalletModel::Ptr AppModel::getWallet() const
@@ -299,7 +394,7 @@ WalletModel::Ptr AppModel::getWallet() const
     return m_wallet;
 }
 
-WalletSettings& AppModel::getSettings()
+WalletSettings& AppModel::getSettings() const
 {
     return m_settings;
 }
@@ -314,29 +409,41 @@ NodeModel& AppModel::getNode()
     return m_nodeModel;
 }
 
-void AppModel::resetWallet()
+SwapCoinClientModel::Ptr AppModel::getBitcoinClient() const
 {
-    if (m_nodeModel.isNodeRunning())
-    {
-        connect(&m_nodeModel, SIGNAL(stoppedNode()), SLOT(stoppedNode()));
-        m_nodeModel.stopNode();
-        return;
-    }
-
-    resetWalletImpl();
+    return m_bitcoinClient;
 }
 
-bool AppModel::checkWalletPassword(const beam::SecString& pass) const
+SwapCoinClientModel::Ptr AppModel::getLitecoinClient() const
 {
-    auto passwordHash = pass.hash();
-
-    return passwordHash.V == m_passwordHash.V;
+    return m_litecoinClient;
 }
 
-void AppModel::changeWalletPassword(const std::string& pass)
+SwapCoinClientModel::Ptr AppModel::getQtumClient() const
 {
-    beam::SecString t = pass;
-    m_passwordHash.V = t.hash().V;
+    return m_qtumClient;
+}
 
-    m_wallet->getAsync()->changeWalletPassword(pass);
+void AppModel::InitBtcClient()
+{
+    m_btcBridgeHolder = std::make_shared<bitcoin::BridgeHolder<bitcoin::Electrum, bitcoin::BitcoinCore017>>();
+    auto settingsProvider = std::make_unique<bitcoin::SettingsProvider>(m_db);
+    settingsProvider->Initialize();
+    m_bitcoinClient = std::make_shared<SwapCoinClientModel>(m_btcBridgeHolder, std::move(settingsProvider), *m_walletReactor);
+}
+
+void AppModel::InitLtcClient()
+{
+    m_ltcBridgeHolder = std::make_shared<bitcoin::BridgeHolder<litecoin::Electrum, litecoin::LitecoinCore017>>();
+    auto settingsProvider = std::make_unique<litecoin::SettingsProvider>(m_db);
+    settingsProvider->Initialize();
+    m_litecoinClient = std::make_shared<SwapCoinClientModel>(m_ltcBridgeHolder, std::move(settingsProvider), *m_walletReactor);
+}
+
+void AppModel::InitQtumClient()
+{
+    m_qtumBridgeHolder = std::make_shared<bitcoin::BridgeHolder<qtum::Electrum, qtum::QtumCore017>>();
+    auto settingsProvider = std::make_unique<qtum::SettingsProvider>(m_db);
+    settingsProvider->Initialize();
+    m_qtumClient = std::make_shared<SwapCoinClientModel>(m_qtumBridgeHolder, std::move(settingsProvider), *m_walletReactor);
 }

@@ -20,37 +20,18 @@ ColumnLayout
         visible: isMainNet()
     }
 
-    Image
+    SvgImage
     {
         Layout.alignment: Qt.AlignHCenter
-        Layout.fillHeight: true
         Layout.preferredWidth: 242
-        Layout.preferredHeight: 170
-        Layout.maximumHeight: 170
-
-        fillMode: Image.PreserveAspectFit
-
+        Layout.preferredHeight: 208
         source: "qrc:/assets/start-logo.svg"
-    }
-
-    SFText 
-    {
-        Layout.alignment: Qt.AlignHCenter
-        Layout.preferredHeight: 34
-
-        //% "BEAM"
-        text: qsTrId("general-beam")
-        color: Style.accent_incoming
-        font.pixelSize: 32
-        font.styleName: "Bold"; font.weight: Font.Bold
-        font.letterSpacing: 20
-        leftPadding: 20
     }
 
     SFText
     {
         Layout.alignment: Qt.AlignHCenter
-        Layout.topMargin: 30
+        Layout.topMargin: 40
         Layout.preferredHeight: 20
 
         //% "Scalable confidential cryptocurrency"

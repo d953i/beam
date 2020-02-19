@@ -6,8 +6,7 @@ import "."
 
 Item {
     id: rootControl
-    x: 5
-    y: 53
+    y: 55
 
     property var model
 
@@ -54,17 +53,31 @@ Item {
             anchors.leftMargin: 0
             anchors.topMargin: 2
 
-            width: rootControl.indicator_radius * 2
-            height: rootControl.indicator_radius * 2
-            radius: rootControl.indicator_radius
-            color: parent.color
+            width:      rootControl.indicator_radius * 2
+            height:     rootControl.indicator_radius * 2
+            radius:     rootControl.indicator_radius
+            color:      parent.color
+            visible:    !model.isConnectionTrusted
+        }
+
+        SvgImage {
+            id:              onlineTrusted
+            anchors.top:     parent.top
+            anchors.left:    parent.left
+            anchors.leftMargin: 0
+            anchors.topMargin: 2
+            width: 10
+            height: 10
+            sourceSize:     Qt.size(10, 10)
+            source:         "qrc:/assets/icon-trusted-node-status.svg"
+            visible:        model.isConnectionTrusted
         }
 
         DropShadow {
-            anchors.fill: online_rect
+            anchors.fill: model.isConnectionTrusted ? onlineTrusted : online_rect
             radius: 5
             samples: 9
-            source: online_rect
+            source: model.isConnectionTrusted ? onlineTrusted : online_rect
             color: parent.color
         }
     }
@@ -109,18 +122,18 @@ Item {
         anchors.top: parent.top
         anchors.left: parent.indicator.right
         anchors.leftMargin: 5
-        anchors.topMargin: -3
+        anchors.topMargin: -1
         color: Style.content_secondary
-        font.pixelSize: 14
+        font.pixelSize: 12
     }
     SFText {
         id: progressText
         anchors.top: parent.top
         anchors.left: status_text.right
         anchors.leftMargin: 5
-        anchors.topMargin: -3
+        anchors.topMargin: -1
         color: Style.content_secondary
-        font.pixelSize: 14
+        font.pixelSize: 12
         text: "(" + model.nodeSyncProgress + "%)"
         visible: model.nodeSyncProgress > 0 && update_indicator.visible
     }
@@ -194,7 +207,7 @@ Item {
             StateChangeScript {
                 name: "errorScript"
                 script: {
-                    online_indicator.color = "red";
+                    online_indicator.color = "#ff746b";
                     rootControl.setIndicator(online_indicator);
                 }
             }

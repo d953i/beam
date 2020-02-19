@@ -130,6 +130,14 @@ public:
         }
     }
 
+    void destroy_connect_timer_if_needed()
+    {
+        if (_connectRequests.empty()) {
+            // we have to break cyclic reference to reactor
+            _connectTimer.reset();
+        }
+    }
+
 private:
     struct ConnectRequest : uv_connect_s {
         uint64_t tag;
@@ -349,19 +357,26 @@ Reactor::Reactor() :
 
     _loop.data = this;
 
-    errorCode = (ErrorCode)uv_async_init(&_loop, &_stopEvent, [](uv_async_t* handle) { uv_stop(handle->loop); });
+    errorCode = (ErrorCode)uv_async_init(&_loop, &_stopEvent, [](uv_async_t* handle) {
+        auto reactor = reinterpret_cast<Reactor*>(handle->data);
+        assert(reactor);
+        if (reactor && reactor->_stopCB) {
+            reactor->_stopCB();
+        }
+        uv_stop(handle->loop);
+    });
+
     if (errorCode != 0) {
         uv_loop_close(&_loop);
         LOG_ERROR() << "cannot initialize loop stop event, error=" << errorCode;
         IO_EXCEPTION(errorCode);
     }
+
     _stopEvent.data = this;
-
-    _pendingWrites = std::make_unique<PendingWrites>(*this);
-    _tcpConnectors = std::make_unique<TcpConnectors>(*this);
-    _tcpShutdowns = std::make_unique<TcpShutdowns>(*this);
-
-    _creatingInternalObjects=false;
+    _pendingWrites  = std::make_unique<PendingWrites>(*this);
+    _tcpConnectors  = std::make_unique<TcpConnectors>(*this);
+    _tcpShutdowns   = std::make_unique<TcpShutdowns>(*this);
+    _creatingInternalObjects = false;
 }
 
 Reactor::~Reactor() {
@@ -405,6 +420,11 @@ Reactor::~Reactor() {
     }
 }
 
+void Reactor::run_ex(StopCallback&& scb) {
+    _stopCB = std::move(scb);
+    run();
+}
+
 void Reactor::run() {
     if (!_loop.data) {
         LOG_DEBUG() << "loop wasn't initialized";
@@ -413,6 +433,9 @@ void Reactor::run() {
     block_sigpipe();
     // NOTE: blocks
     uv_run(&_loop, UV_RUN_DEFAULT);
+
+    // HACK: it is likely that this is the end of the thread, we have to break cycle reference
+    _tcpConnectors->destroy_connect_timer_if_needed();
 }
 
 void Reactor::stop() {

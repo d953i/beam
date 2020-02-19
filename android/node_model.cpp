@@ -60,6 +60,11 @@ bool NodeModel::isNodeRunning() const
     return m_nodeClient.isNodeRunning();
 }
 
+void NodeModel::onInitProgressUpdated(uint64_t done, uint64_t total)
+{
+    LOG_DEBUG() << "onInitProgressUpdated(" << done << ", " << total << ")";
+}
+
 void NodeModel::onSyncProgressUpdated(int done, int total)
 {
     LOG_DEBUG() << "onNodeSyncProgressUpdated(" << done << ", " << total << ")";
@@ -85,6 +90,24 @@ void NodeModel::onStoppedNode()
     JNIEnv* env = Android_JNI_getEnv();
 
     jmethodID callback = env->GetStaticMethodID(WalletListenerClass, "onStoppedNode", "()V");
+
+    env->CallStaticVoidMethod(WalletListenerClass, callback);
+}
+
+void NodeModel::onNodeCreated()
+{
+    JNIEnv* env = Android_JNI_getEnv();
+
+    jmethodID callback = env->GetStaticMethodID(WalletListenerClass, "onNodeCreated", "()V");
+
+    env->CallStaticVoidMethod(WalletListenerClass, callback);
+}
+
+void NodeModel::onNodeDestroyed()
+{
+    JNIEnv* env = Android_JNI_getEnv();
+
+    jmethodID callback = env->GetStaticMethodID(WalletListenerClass, "onNodeDestroyed", "()V");
 
     env->CallStaticVoidMethod(WalletListenerClass, callback);
 }

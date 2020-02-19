@@ -30,6 +30,8 @@
 #include "wallet/common.h"
 #include "utility/io/address.h"
 #include "secstring.h"
+#include "keykeeper/private_key_keeper.h"
+#include "variables_db.h"
 
 struct sqlite3;
 
@@ -73,7 +75,7 @@ namespace beam::wallet
         Height m_spentHeight;   // height at which the coin was spent
 
         boost::optional<TxID> m_createTxId;  // id of the transaction which created the UTXO
-        boost::optional<TxID> m_spentTxId;   // id of the transaction which spernt the UTXO
+        boost::optional<TxID> m_spentTxId;   // id of the transaction which spent the UTXO
         
         uint64_t m_sessionId;   // Used in the API to lock coins for specific session (see https://github.com/BeamMW/beam/wiki/Beam-wallet-protocol-API#tx_split)
 
@@ -85,7 +87,6 @@ namespace beam::wallet
     };
 
     using CoinIDList = std::vector<Coin::ID>;
-
     
     // Used for SBBS Address management in the wallet
     struct WalletAddress
@@ -94,8 +95,8 @@ namespace beam::wallet
         std::string m_label;
         std::string m_category;
         Timestamp m_createTime;
-        uint64_t  m_duration; // if it equals 0 then address never expires
-        uint64_t  m_OwnID; // set for own address
+        uint64_t  m_duration;   // if equals to "AddressNeverExpires" then address never expires
+        uint64_t  m_OwnID;      // set for own address
         
         WalletAddress();
         bool operator == (const WalletAddress& other) const;
@@ -103,11 +104,20 @@ namespace beam::wallet
         bool isExpired() const;
         Timestamp getCreateTime() const;
         Timestamp getExpirationTime() const;
-
+        
+        enum class ExpirationStatus
+        {
+            Expired = 0,
+            OneDay,
+            Never,
+            AsIs
+        };
         void setLabel(const std::string& label);
-        void makeExpired();
-        void makeActive(uint64_t duration);
-        void makeEternal();
+        void setExpiration(ExpirationStatus status);
+
+        static constexpr uint64_t AddressExpirationNever = 0;
+        static constexpr uint64_t AddressExpiration24h   = 24 * 60 * 60;
+        static constexpr uint64_t AddressExpiration1h    = 60 * 60;
     };
 
     // Describes structure of generic transaction parameter
@@ -120,8 +130,7 @@ namespace beam::wallet
     };
 
     // Outgoing wallet messages sent through SBBS (used in Cold Wallet)
-    // TODO: Think about renaming to OutgoingWalletMessage
-    struct WalletMessage
+    struct OutgoingWalletMessage
     {
         int m_ID;
         WalletID m_PeerID;
@@ -155,15 +164,60 @@ namespace beam::wallet
 
     };
 
+    class DatabaseException : public std::runtime_error
+    {
+    public:
+        explicit DatabaseException(const std::string& message)
+            : std::runtime_error(message)
+        {
+        }
+    };
+
+    class InvalidDatabaseVersionException : public DatabaseException
+    {
+    public:
+        explicit InvalidDatabaseVersionException()
+            : DatabaseException("")
+        {
+        }
+    };
+
+    class DatabaseMigrationException : public DatabaseException
+    {
+    public:
+        explicit DatabaseMigrationException()
+            : DatabaseException("")
+        {
+        }
+    };
+
+    class DatabaseNotFoundException : public DatabaseException
+    {
+    public:
+        explicit DatabaseNotFoundException()
+            : DatabaseException("")
+        {
+        }
+    };
+    
+    class FileIsNotDatabaseException : public DatabaseException
+    {
+    public:
+        explicit FileIsNotDatabaseException()
+            : DatabaseException("")
+        {
+        }
+    };
+
     struct IWalletDbObserver
     {
         virtual void onCoinsChanged() {};
-        virtual void onTransactionChanged(ChangeAction action, std::vector<TxDescription>&& items) {};
-        virtual void onSystemStateChanged() {};
+        virtual void onTransactionChanged(ChangeAction action, const std::vector<TxDescription>& items) {};
+        virtual void onSystemStateChanged(const Block::SystemState::ID& stateID) {};
         virtual void onAddressChanged(ChangeAction action, const std::vector<WalletAddress>& items) {};
     };
 
-    struct IWalletDB
+    struct IWalletDB : IVariablesDB
     {
         using Ptr = std::shared_ptr<IWalletDB>;
         virtual ~IWalletDB() {}
@@ -173,6 +227,9 @@ namespace beam::wallet
 
         // Returns the Child Key Derivative Function (operates on secret keys)
 		beam::Key::IKdf::Ptr get_ChildKdf(const Key::IDV&) const;
+
+        // Returns the Owner Key Derivative Function (operates on public keys)
+        virtual beam::Key::IPKdf::Ptr get_OwnerKdf() const = 0;
 
         // Calculates blinding factor and commitment of specifc Coin::ID
         void calcCommitment(ECC::Scalar::Native& sk, ECC::Point& comm, const Coin::ID&);
@@ -209,32 +266,22 @@ namespace beam::wallet
         virtual Coin generateSharedCoin(Amount amount) = 0;
 
         // Set of basic coin related database methods
-        virtual void store(Coin& coin) = 0;
-        virtual void store(std::vector<Coin>&) = 0;
-        virtual void save(const Coin& coin) = 0;
-        virtual void save(const std::vector<Coin>& coins) = 0;
-        virtual void remove(const Coin::ID&) = 0;
-        virtual void remove(const std::vector<Coin::ID>&) = 0;
-        virtual bool find(Coin& coin) = 0;
-        virtual void clear() = 0;
+        virtual void storeCoin(Coin& coin) = 0;
+        virtual void storeCoins(std::vector<Coin>&) = 0;
+        virtual void saveCoin(const Coin& coin) = 0;
+        virtual void saveCoins(const std::vector<Coin>& coins) = 0;
+        virtual void removeCoin(const Coin::ID&) = 0;
+        virtual void removeCoins(const std::vector<Coin::ID>&) = 0;
+        virtual bool findCoin(Coin& coin) = 0;
+        virtual void clearCoins() = 0;
 
         // Generic visitor to iterate over coin collection
-        virtual void visit(std::function<bool(const Coin& coin)> func) = 0;
+        virtual void visitCoins(std::function<bool(const Coin& coin)> func) = 0;
 
         // Used in split API for session management
-        virtual bool lock(const CoinIDList& list, uint64_t session) = 0;
-        virtual bool unlock(uint64_t session) = 0;
-        virtual CoinIDList getLocked(uint64_t session) const = 0;
-
-        // Set of methods for low level database manipulation
-        virtual void setVarRaw(const char* name, const void* data, size_t size) = 0;
-        virtual bool getVarRaw(const char* name, void* data, int size) const = 0;
-
-        virtual void setPrivateVarRaw(const char* name, const void* data, size_t size) = 0;
-        virtual bool getPrivateVarRaw(const char* name, void* data, int size) const = 0;
-
-        // TODO: Consider refactoring
-        virtual bool getBlob(const char* name, ByteBuffer& var) const = 0;
+        virtual bool lockCoins(const CoinIDList& list, uint64_t session) = 0;
+        virtual bool unlockCoins(uint64_t session) = 0;
+        virtual CoinIDList getLockedCoins(uint64_t session) const = 0;
 
         // Returns currently known blockchain height
         virtual Height getCurrentHeight() const = 0;
@@ -252,8 +299,9 @@ namespace beam::wallet
         virtual bool setTxParameter(const TxID& txID, SubTxID subTxID, TxParameterID paramID,
             const ByteBuffer& blob, bool shouldNotifyAboutChanges) = 0;
         virtual bool getTxParameter(const TxID& txID, SubTxID subTxID, TxParameterID paramID, ByteBuffer& blob) const = 0;
-        virtual auto getAllTxParameters() const -> std::vector<TxParameter> = 0;
+        virtual std::vector<TxParameter> getAllTxParameters() const = 0;
         virtual void rollbackTx(const TxID& txId) = 0;
+        virtual void deleteCoinsCreatedByTx(const TxID& txId) = 0;
 
         // ////////////////////////////////////////////
         // Address management
@@ -267,8 +315,8 @@ namespace beam::wallet
         virtual void setSystemStateID(const Block::SystemState::ID& stateID) = 0;
         virtual bool getSystemStateID(Block::SystemState::ID& stateID) const = 0;
 
-        virtual void subscribe(IWalletDbObserver* observer) = 0;
-        virtual void unsubscribe(IWalletDbObserver* observer) = 0;
+        virtual void Subscribe(IWalletDbObserver* observer) = 0;
+        virtual void Unsubscribe(IWalletDbObserver* observer) = 0;
 
         virtual void changePassword(const SecString& password) = 0;
 
@@ -279,8 +327,8 @@ namespace beam::wallet
         
         // ///////////////////////////////
         // Message management
-        virtual std::vector<WalletMessage> getWalletMessages() const = 0;
-        virtual uint64_t saveWalletMessage(const WalletMessage& message) = 0;
+        virtual std::vector<OutgoingWalletMessage> getWalletMessages() const = 0;
+        virtual uint64_t saveWalletMessage(const OutgoingWalletMessage& message) = 0;
         virtual void deleteWalletMessage(uint64_t id) = 0;
 
         virtual std::vector<IncomingWalletMessage> getIncomingWalletMessages() const = 0;
@@ -298,33 +346,39 @@ namespace beam::wallet
     {
     public:
         static bool isInitialized(const std::string& path);
+#if defined(BEAM_HW_WALLET)
+        static Ptr initWithTrezor(const std::string& path, std::shared_ptr<ECC::HKdfPub> ownerKey, const SecString& password, io::Reactor::Ptr reactor);
+#endif
         static Ptr init(const std::string& path, const SecString& password, const ECC::NoLeak<ECC::uintBig>& secretKey, io::Reactor::Ptr reactor, bool separateDBForPrivateData = false);
-        static Ptr open(const std::string& path, const SecString& password, io::Reactor::Ptr reactor);
+        static Ptr open(const std::string& path, const SecString& password, io::Reactor::Ptr reactor, bool useTrezor = false);
 
+        WalletDB(sqlite3* db, io::Reactor::Ptr reactor);
         WalletDB(sqlite3* db, io::Reactor::Ptr reactor, sqlite3* sdb);
         WalletDB(sqlite3* db, const ECC::NoLeak<ECC::uintBig>& secretKey, io::Reactor::Ptr reactor, sqlite3* sdb);
         ~WalletDB();
 
         beam::Key::IKdf::Ptr get_MasterKdf() const override;
+        beam::Key::IPKdf::Ptr get_OwnerKdf() const override;
         uint64_t AllocateKidRange(uint64_t nCount) override;
         std::vector<Coin> selectCoins(Amount amount) override;
         std::vector<Coin> getCoinsCreatedByTx(const TxID& txId) override;
         std::vector<Coin> getCoinsByTx(const TxID& txId) override;
         std::vector<Coin> getCoinsByID(const CoinIDList& ids) override;
         Coin generateSharedCoin(Amount amount) override;
-        void store(Coin& coin) override;
-        void store(std::vector<Coin>&) override;
-        void save(const Coin& coin) override;
-        void save(const std::vector<Coin>& coins) override;
-        void remove(const Coin::ID&) override;
-        void remove(const std::vector<Coin::ID>&) override;
-        bool find(Coin& coin) override;
-        void clear() override;
+        void storeCoin(Coin& coin) override;
+        void storeCoins(std::vector<Coin>&) override;
+        void saveCoin(const Coin& coin) override;
+        void saveCoins(const std::vector<Coin>& coins) override;
+        void removeCoin(const Coin::ID&) override;
+        void removeCoins(const std::vector<Coin::ID>&) override;
+        bool findCoin(Coin& coin) override;
+        void clearCoins() override;
 
-        void visit(std::function<bool(const Coin& coin)> func) override;
+        void visitCoins(std::function<bool(const Coin& coin)> func) override;
 
         void setVarRaw(const char* name, const void* data, size_t size) override;
         bool getVarRaw(const char* name, void* data, int size) const override;
+        void removeVarRaw(const char* name) override;
 
         void setPrivateVarRaw(const char* name, const void* data, size_t size) override;
         bool getPrivateVarRaw(const char* name, void* data, int size) const override;
@@ -338,6 +392,7 @@ namespace beam::wallet
         void saveTx(const TxDescription& p) override;
         void deleteTx(const TxID& txId) override;
         void rollbackTx(const TxID& txId) override;
+        void deleteCoinsCreatedByTx(const TxID& txId) override;
 
         std::vector<WalletAddress> getAddresses(bool own) const override;
         void saveAddress(const WalletAddress&) override;
@@ -348,25 +403,25 @@ namespace beam::wallet
         void setSystemStateID(const Block::SystemState::ID& stateID) override;
         bool getSystemStateID(Block::SystemState::ID& stateID) const override;
 
-        void subscribe(IWalletDbObserver* observer) override;
-        void unsubscribe(IWalletDbObserver* observer) override;
+        void Subscribe(IWalletDbObserver* observer) override;
+        void Unsubscribe(IWalletDbObserver* observer) override;
 
         void changePassword(const SecString& password) override;
 
         bool setTxParameter(const TxID& txID, SubTxID subTxID, TxParameterID paramID,
             const ByteBuffer& blob, bool shouldNotifyAboutChanges) override;
         bool getTxParameter(const TxID& txID, SubTxID subTxID, TxParameterID paramID, ByteBuffer& blob) const override;
-        auto getAllTxParameters() const -> std::vector<TxParameter> override;
+        std::vector<TxParameter> getAllTxParameters() const override;
 
         Block::SystemState::IHistory& get_History() override;
         void ShrinkHistory() override;
 
-        bool lock(const CoinIDList& list, uint64_t session) override;
-        bool unlock(uint64_t session) override;
-        CoinIDList getLocked(uint64_t session) const override;
+        bool lockCoins(const CoinIDList& list, uint64_t session) override;
+        bool unlockCoins(uint64_t session) override;
+        CoinIDList getLockedCoins(uint64_t session) const override;
 
-        std::vector<WalletMessage> getWalletMessages() const override;
-        uint64_t saveWalletMessage(const WalletMessage& message) override;
+        std::vector<OutgoingWalletMessage> getWalletMessages() const override;
+        uint64_t saveWalletMessage(const OutgoingWalletMessage& message) override;
         void deleteWalletMessage(uint64_t id) override;
 
         std::vector<IncomingWalletMessage> getIncomingWalletMessages() const override;
@@ -374,17 +429,18 @@ namespace beam::wallet
         void deleteIncomingWalletMessage(uint64_t id) override;
 
     private:
-        void removeImpl(const Coin::ID& cid);
+        static void createTables(sqlite3* db, sqlite3* privateDb);
+        void removeCoinImpl(const Coin::ID& cid);
         void notifyCoinsChanged();
-        void notifyTransactionChanged(ChangeAction action, std::vector<TxDescription>&& items);
-        void notifySystemStateChanged();
+        void notifyTransactionChanged(ChangeAction action, const std::vector<TxDescription>& items);
+        void notifySystemStateChanged(const Block::SystemState::ID& stateID);
         void notifyAddressChanged(ChangeAction action, const std::vector<WalletAddress>& items);
 
         static uint64_t get_RandomID();
-        bool updateRaw(const Coin&);
-        void insertRaw(const Coin&);
-        void insertNew(Coin&);
-        void saveRaw(const Coin&);
+        bool updateCoinRaw(const Coin&);
+        void insertCoinRaw(const Coin&);
+        void insertNewCoin(Coin&);
+        void saveCoinRaw(const Coin&);
 
         // ////////////////////////////////////////
         // Cache for optimized access for database fields
@@ -392,9 +448,11 @@ namespace beam::wallet
 
         void insertParameterToCache(const TxID& txID, SubTxID subTxID, TxParameterID paramID, const boost::optional<ByteBuffer>& blob) const;
         void deleteParametersFromCache(const TxID& txID);
+        bool hasTransaction(const TxID& txID) const;
         void insertAddressToCache(const WalletID& id, const boost::optional<WalletAddress>& address) const;
         void deleteAddressFromCache(const WalletID& id);
         void flushDB();
+        void rollbackDB();
         void onModified();
         void onFlushTimer();
         void onPrepareToModify();
@@ -404,10 +462,12 @@ namespace beam::wallet
         sqlite3* m_PrivateDB;
         io::Reactor::Ptr m_Reactor;
         Key::IKdf::Ptr m_pKdf;
+        Key::IPKdf::Ptr m_OwnerKdf;
         io::Timer::Ptr m_FlushTimer;
         bool m_IsFlushPending;
         std::unique_ptr<sqlite::Transaction> m_DbTransaction;
         std::vector<IWalletDbObserver*> m_subscribers;
+        const std::set<TxParameterID> m_mandatoryTxParams;
 
         // Wallet has ablity to track blockchain state
         // This interface allows to check and update the blockchain state 
@@ -423,6 +483,8 @@ namespace beam::wallet
         
         mutable ParameterCache m_TxParametersCache;
         mutable std::map<WalletID, boost::optional<WalletAddress>> m_AddressesCache;
+
+        bool m_useTrezor = false;
     };
 
     namespace storage
@@ -496,9 +558,9 @@ namespace beam::wallet
         bool setTxParameter(IWalletDB& db, const TxID& txID, TxParameterID paramID, const ECC::Scalar::Native& value, bool shouldNotifyAboutChanges);
         bool setTxParameter(IWalletDB& db, const TxID& txID, TxParameterID paramID, const ByteBuffer& value, bool shouldNotifyAboutChanges);
 
-        bool changeAddressExpiration(IWalletDB& walletDB, const WalletID& walletID, uint64_t expiration);
-        WalletAddress createAddress(IWalletDB& walletDB);
-        WalletID generateWalletIDFromIndex(IWalletDB& walletDB, uint64_t ownID);
+        bool changeAddressExpiration(IWalletDB& walletDB, const WalletID& walletID, WalletAddress::ExpirationStatus status);
+        WalletAddress createAddress(IWalletDB& walletDB, IPrivateKeyKeeper::Ptr keyKeeper);
+        WalletID generateWalletIDFromIndex(IPrivateKeyKeeper::Ptr keyKeeper, uint64_t ownID);
 
         Coin::Status GetCoinStatus(const IWalletDB&, const Coin&, Height hTop);
         void DeduceStatus(const IWalletDB&, Coin&, Height hTop);
@@ -509,6 +571,8 @@ namespace beam::wallet
             Amount Avail = 0;
             Amount Maturing = 0;
             Amount Incoming = 0;
+            Amount ReceivingIncoming = 0;
+            Amount ReceivingChange = 0;
             Amount Unavail = 0;
             Amount Outgoing = 0;
             Amount AvailCoinbase = 0;
@@ -566,10 +630,13 @@ namespace beam::wallet
         };
 
         std::string ExportDataToJson(const IWalletDB& db);
-        bool ImportDataFromJson(IWalletDB& db, const char* data, size_t size);
+        bool ImportDataFromJson(IWalletDB& db, IPrivateKeyKeeper::Ptr keyKeeper, const char* data, size_t size);
 
         std::string TxDetailsInfo(const IWalletDB::Ptr& db, const TxID& txID);
         ByteBuffer ExportPaymentProof(const IWalletDB& db, const TxID& txID);
         bool VerifyPaymentProof(const ByteBuffer& data);
+        std::string ExportTxHistoryToCsv(const IWalletDB& db);
+
+        void HookErrors();
     }
 }

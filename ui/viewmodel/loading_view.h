@@ -14,9 +14,15 @@
 
 #pragma once
 
+#include <memory>
 #include <QObject>
 
 #include "model/wallet_model.h"
+
+namespace beamui
+{
+    class Filter;
+}  // namespace beamui
 
 class LoadingViewModel : public QObject
 {
@@ -38,31 +44,51 @@ public:
     bool getIsCreating() const;
 
     Q_INVOKABLE void resetWallet();
+    Q_INVOKABLE void recalculateProgress();
 
 public slots:
+    void onNodeInitProgressUpdated(quint64 done, quint64 total);
     void onSyncProgressUpdated(int done, int total);
     void onNodeSyncProgressUpdated(int done, int total);
     void onNodeConnectionChanged(bool isNodeConnected);
     void onGetWalletError(beam::wallet::ErrorType error);
+
 signals:
     void progressChanged();
     void progressMessageChanged();
     void syncCompleted();
     void walletError(const QString& title, const QString& message);
     void isCreatingChanged();
+    void walletResetCompleted();
+
 private:
+    void onSync(int done, int total);
     void updateProgress();
-    void syncWithNode();
-private:
+    const char* getPercentagePlaceholder(double progress) const;
+    int getEstimate(double bps);
+    double getWholeTimeBps() const;
+    double getWindowedBps() const;
+    bool detectNetworkProblems();
+
     WalletModel& m_walletModel;
     double m_progress;
-    int m_nodeTotal;
-    int m_nodeDone;
+    double m_nodeInitProgress;
     int m_total;
     int m_done;
-    bool m_walletConnected;
+    int m_lastDone;
     bool m_hasLocalNode;
     QString m_progressMessage;
-    bool m_skipProgress;
     bool m_isCreating;
+    
+    bool m_isDownloadStarted;
+    double m_lastProgress;
+    std::unique_ptr<beamui::Filter> m_bpsWholeTimeFilter;
+    std::unique_ptr<beamui::Filter> m_bpsWindowedFilter;
+    std::unique_ptr<beamui::Filter> m_estimateFilter;
+    
+    beam::Timestamp m_startTimestamp;
+    beam::Timestamp m_lastUpdateTimestamp;
+    beam::Timestamp m_previousUpdateTimestamp;
+    int m_estimate;
+    int m_bpsRecessionCount;
 };

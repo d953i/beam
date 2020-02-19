@@ -18,7 +18,9 @@
 
 #include <QInputDialog>
 #include <QMessageBox>
-
+// uncomment for QML profiling
+//#include <QQmlDebuggingEnabler>
+//QQmlDebuggingEnabler enabler;
 #include <qqmlcontext.h>
 #include "viewmodel/start_view.h"
 #include "viewmodel/loading_view.h"
@@ -26,29 +28,36 @@
 #include "viewmodel/utxo_view.h"
 #include "viewmodel/utxo_view_status.h"
 #include "viewmodel/utxo_view_type.h"
+#include "viewmodel/atomic_swap/swap_offers_view.h"
 #include "viewmodel/dashboard_view.h"
 #include "viewmodel/address_book_view.h"
-#include "viewmodel/wallet_view.h"
+#include "viewmodel/wallet/wallet_view.h"
 #include "viewmodel/notifications_view.h"
 #include "viewmodel/help_view.h"
 #include "viewmodel/settings_view.h"
 #include "viewmodel/messages_view.h"
 #include "viewmodel/statusbar_view.h"
 #include "viewmodel/theme.h"
+#include "viewmodel/receive_view.h"
+#include "viewmodel/receive_swap_view.h"
+#include "viewmodel/send_view.h"
+#include "viewmodel/send_swap_view.h"
+#include "viewmodel/el_seed_validator.h"
+#include "viewmodel/currencies.h"
 #include "model/app_model.h"
-
+#include "viewmodel/qml_globals.h"
+#include "viewmodel/helpers/list_model.h"
+#include "viewmodel/helpers/sortfilterproxymodel.h"
+#include "viewmodel/helpers/token_bootstrap_manager.h"
 #include "wallet/wallet_db.h"
 #include "utility/log_rotation.h"
 #include "core/ecc_native.h"
-
 #include "utility/cli/options.h"
-
 #include <QtCore/QtPlugin>
-
 #include "version.h"
-
 #include "utility/string_helpers.h"
 #include "utility/helpers.h"
+#include "model/translator.h"
 
 #if defined(BEAM_USE_STATIC)
 
@@ -172,9 +181,13 @@ int main (int argc, char* argv[])
             LOG_INFO() << "Beam Wallet UI " << PROJECT_VERSION << " (" << BRANCH_NAME << ")";
             LOG_INFO() << "Rules signature: " << Rules::get().get_SignatureStr();
 
+            // AppModel Model MUST BE created before the UI engine and destroyed after.
+            // AppModel serves the UI and UI should be able to access AppModel at any time
+            // even while being destroyed. Do not move engine above AppModel
             WalletSettings settings(appDataDir);
+            AppModel appModel(settings);
             QQmlApplicationEngine engine;
-            AppModel appModel(settings, engine);
+            Translator translator(settings, engine);
             
             if (settings.getNodeAddress().isEmpty())
             {
@@ -192,27 +205,48 @@ int main (int argc, char* argv[])
                         Q_UNUSED(scriptEngine)
                         return new Theme;
                     });
+
+            qmlRegisterSingletonType<QMLGlobals>(
+                    "Beam.Wallet", 1, 0, "BeamGlobals",
+                    [](QQmlEngine* engine, QJSEngine* scriptEngine) -> QObject* {
+                        Q_UNUSED(engine)
+                        Q_UNUSED(scriptEngine)
+                        return new QMLGlobals(*engine);
+                    });
+
+            qRegisterMetaType<Currency>("Currency");
+            qmlRegisterUncreatableType<WalletCurrency>("Beam.Wallet", 1, 0, "Currency", "Not creatable as it is an enum type.");
             qmlRegisterType<StartViewModel>("Beam.Wallet", 1, 0, "StartViewModel");
             qmlRegisterType<LoadingViewModel>("Beam.Wallet", 1, 0, "LoadingViewModel");
             qmlRegisterType<MainViewModel>("Beam.Wallet", 1, 0, "MainViewModel");
             qmlRegisterType<DashboardViewModel>("Beam.Wallet", 1, 0, "DashboardViewModel");
             qmlRegisterType<WalletViewModel>("Beam.Wallet", 1, 0, "WalletViewModel");
-            qmlRegisterType<UtxoViewStatus>("Beam.Wallet", 1, 0, "UtxoStatus");
-            qmlRegisterType<UtxoViewType>("Beam.Wallet", 1, 0, "UtxoType");
+            qmlRegisterUncreatableType<UtxoViewStatus>("Beam.Wallet", 1, 0, "UtxoStatus", "Not creatable as it is an enum type.");
+            qmlRegisterUncreatableType<UtxoViewType>("Beam.Wallet", 1, 0, "UtxoType", "Not creatable as it is an enum type.");
             qmlRegisterType<UtxoViewModel>("Beam.Wallet", 1, 0, "UtxoViewModel");
             qmlRegisterType<SettingsViewModel>("Beam.Wallet", 1, 0, "SettingsViewModel");
             qmlRegisterType<AddressBookViewModel>("Beam.Wallet", 1, 0, "AddressBookViewModel");
+            qmlRegisterType<SwapOffersViewModel>("Beam.Wallet", 1, 0, "SwapOffersViewModel");
             qmlRegisterType<NotificationsViewModel>("Beam.Wallet", 1, 0, "NotificationsViewModel");
             qmlRegisterType<HelpViewModel>("Beam.Wallet", 1, 0, "HelpViewModel");
             qmlRegisterType<MessagesViewModel>("Beam.Wallet", 1, 0, "MessagesViewModel");
             qmlRegisterType<StatusbarViewModel>("Beam.Wallet", 1, 0, "StatusbarViewModel");
+            qmlRegisterType<ReceiveViewModel>("Beam.Wallet", 1, 0, "ReceiveViewModel");
+            qmlRegisterType<ReceiveSwapViewModel>("Beam.Wallet", 1, 0, "ReceiveSwapViewModel");
+            qmlRegisterType<SendViewModel>("Beam.Wallet", 1, 0, "SendViewModel");
+            qmlRegisterType<SendSwapViewModel>("Beam.Wallet", 1, 0, "SendSwapViewModel");
+            qmlRegisterType<ELSeedValidator>("Beam.Wallet", 1, 0, "ELSeedValidator");
 
             qmlRegisterType<AddressItem>("Beam.Wallet", 1, 0, "AddressItem");
             qmlRegisterType<ContactItem>("Beam.Wallet", 1, 0, "ContactItem");
-            qmlRegisterType<TxObject>("Beam.Wallet", 1, 0, "TxObject");
             qmlRegisterType<UtxoItem>("Beam.Wallet", 1, 0, "UtxoItem");
             qmlRegisterType<PaymentInfoItem>("Beam.Wallet", 1, 0, "PaymentInfoItem");
             qmlRegisterType<WalletDBPathItem>("Beam.Wallet", 1, 0, "WalletDBPathItem");
+            qmlRegisterType<SwapOfferItem>("Beam.Wallet", 1, 0, "SwapOfferItem");
+            qmlRegisterType<SwapOffersList>("Beam.Wallet", 1, 0, "SwapOffersList");
+            qmlRegisterType<TokenBootstrapManager>("Beam.Wallet", 1, 0, "TokenBootstrapManager");
+            
+            qmlRegisterType<SortFilterProxyModel>("Beam.Wallet", 1, 0, "SortFilterProxyModel");
 
             engine.load(QUrl("qrc:/root.qml"));
 
@@ -231,9 +265,8 @@ int main (int argc, char* argv[])
                 return -1;
             }
 
-            window->setMinimumSize(QSize(768, 540));
+            //window->setMinimumSize(QSize(768, 540));
             window->setFlag(Qt::WindowFullscreenButtonHint);
-
             window->show();
 
             return app.exec();

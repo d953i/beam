@@ -37,7 +37,10 @@ public:
     bool isNodeRunning() const;
 
 protected:
+    void onInitProgressUpdated(uint64_t done, uint64_t total) override;
     void onSyncProgressUpdated(int done, int total) override;
+    void onNodeCreated() override;
+    void onNodeDestroyed() override;
     void onStartedNode() override;
     void onStoppedNode() override;
     // void onFailedToStartNode() override;
