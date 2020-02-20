@@ -1643,25 +1643,42 @@ namespace
 
         void OnNewTip() override
         {
+            //cout << "[" << m_CurrentPeer << "] " <<  "OnNewTip\n";
             ScanUnvisited(true);
         }
 
         void OnTipUnchanged() override
         {
+            //cout << "[" << m_CurrentPeer << "] " << "OnTipUnchanged\n";
             ScanUnvisited(true);
+        }
+
+        void PrintProgrees()
+        {
+            cout << "Status " << " Alive: " << m_AliveCounter << " Visited: " << m_VisitedPeers.size() << " Total: " << m_Peers.size() << "" << endl;
         }
 
         void ScanUnvisited(bool ok)
         {
+            if (m_VisitedPeers.find(m_CurrentPeer) != m_VisitedPeers.end())
+            {
+                return;
+            }
             cout << (ok ? string("[Ok]") : string("[Failed]")) << endl;
             m_Peers[m_CurrentPeer].m_IsAlive = ok;
             if (ok)
                 ++m_AliveCounter;
+            
             m_UnvisitedPeers.erase(m_CurrentPeer);
             m_VisitedPeers.insert(m_CurrentPeer);
 
+            PrintProgrees();
+
             if (m_UnvisitedPeers.empty())
             {
+                if (m_Timer)
+                    m_Timer->cancel();
+
                 size_t count = 0;
                 for (const auto& p : m_Peers)
                 {
@@ -1674,9 +1691,13 @@ namespace
                 io::Reactor::get_Current().stop();
                 return;
             }
-
+            
             if (ok && m_PeerCounter > 0)
             {
+                if (!m_Timer)
+                    m_Timer = io::Timer::create(io::Reactor::get_Current());
+
+                m_Timer->start(10000, false, [this]() {StartScanning(); });
                 return;
             }
 
@@ -1685,11 +1706,15 @@ namespace
 
         void StartScanning()
         {
+            cout << "[" << m_CurrentPeer << "] " << 5 - m_PeerCounter << " peers reported\n";
+            
             m_PeerCounter = 5;
             const auto& peer = *m_UnvisitedPeers.begin();
             const auto& peerInfo = m_Peers[peer];
-            cout << "Scanning " << " (" << m_AliveCounter << "/" << m_VisitedPeers.size() << "/" << m_Peers.size() << ") " << peerInfo.m_PeerID << " ip=" << peerInfo.m_Address << endl;
             m_CurrentPeer = peer;
+            cout << "[" << m_CurrentPeer << "] " << "Connecting...\t\t";
+            
+            //PrintProgrees();
 
             m_Nnet = make_shared<CountFlyClientNetwork>(*this, *this);
             m_Nnet->m_Cfg.m_ReconnectTimeout_ms = 1000000; // to prevent reconnect
@@ -1715,7 +1740,7 @@ namespace
 
         void OnNewPeer(const PeerID& id, io::Address address) override 
         {
-            cout << "New peer: " << id << " address: " << address << endl;
+            cout << "[" << m_CurrentPeer << "] " << "New peer: " << id << " address: " << address << endl;
             if (!address.empty())
             {
                 auto it = m_Peers.find(address);
@@ -1734,6 +1759,8 @@ namespace
                     m_UnvisitedPeers.insert(address);
                 }
             }
+            if (m_Timer)
+                m_Timer->cancel();
 
             if (--m_PeerCounter == 0)
             {
@@ -1759,6 +1786,7 @@ namespace
         Block::SystemState::HistoryMap m_Headers;
         shared_ptr<proto::FlyClient::NetworkStd> m_Nnet;
         io::AsyncEvent::Ptr m_Async;
+        io::Timer::Ptr m_Timer;
 
         struct PeerInfo
         {
@@ -1781,18 +1809,21 @@ namespace
     {
         CountWallet wallet;
 
-        vector<string> peers = { "eu-node01.mainnet.beam.mw:8100",
-"eu-node02.mainnet.beam.mw:8100",
-"eu-node03.mainnet.beam.mw:8100",
-"eu-node04.mainnet.beam.mw:8100",
-"us-node01.mainnet.beam.mw:8100",
-"us-node02.mainnet.beam.mw:8100",
-"us-node03.mainnet.beam.mw:8100",
-"us-node04.mainnet.beam.mw:8100",
-"ap-node01.mainnet.beam.mw:8100",
-"ap-node02.mainnet.beam.mw:8100",
-"ap-node03.mainnet.beam.mw:8100",
-"ap-node04.mainnet.beam.mw:8100" };// getDefaultPeers();
+        vector<string> peers = { 
+            "eu-node01.mainnet.beam.mw:8100",
+            "eu-node02.mainnet.beam.mw:8100",
+            "eu-node03.mainnet.beam.mw:8100",
+            "eu-node04.mainnet.beam.mw:8100",
+            "us-node01.mainnet.beam.mw:8100",
+            "us-node02.mainnet.beam.mw:8100",
+            "us-node03.mainnet.beam.mw:8100",
+            "us-node04.mainnet.beam.mw:8100",
+            "ap-node01.mainnet.beam.mw:8100",
+            "ap-node02.mainnet.beam.mw:8100",
+            "ap-node03.mainnet.beam.mw:8100",
+            "ap-node04.mainnet.beam.mw:8100",
+            "192.168.1.46:10015"
+        };// getDefaultPeers();
         vector<io::Address> addresses;
         for (const auto& peer : peers)
         {
