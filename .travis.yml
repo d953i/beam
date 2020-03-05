@@ -46,7 +46,11 @@ matrix:
       language: cpp
       osx_image: xcode10.1
       install:
-        # - export TZ=Etc/GMT-3
+        - sudo systemsetup -gettimezone
+        - export TZ=Etc/GMT-3
+        - sudo systemsetup -gettimezone
+        - sudo systemsetup -settimezone GMT
+        - sudo systemsetup -gettimezone
         - brew update
         - brew unlink cmake
         - brew install cmake
