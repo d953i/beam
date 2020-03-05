@@ -47,7 +47,7 @@ matrix:
       osx_image: xcode10.1
       install:
         - sudo systemsetup -gettimezone
-        - export TZ=Etc/GMT-3
+        - export TZ=GMT
         - sudo systemsetup -gettimezone
         - sudo systemsetup -settimezone GMT
         - sudo systemsetup -gettimezone
