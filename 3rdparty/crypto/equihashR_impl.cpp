@@ -112,6 +112,14 @@ void GenerateHash(const eh_HashState& base_state, eh_index g, unsigned char* has
         //blake2b_final(&state, (unsigned char*)&tmpHash[0], static_cast<uint8_t>(hLen));
         blake2b_final(&state, (unsigned char*)&tmpHash[0], static_cast<uint8_t>(64));
 
+        if (g < 32)
+        {
+            printf("b2b[%03d] = 0x", g);
+            for (size_t b = 0; b < 64; b++)
+                printf("%02x", ((uint8_t*)tmpHash)[b]);
+            printf("; g = %u, g2 = %u\n", g, g2);
+        }
+
         for (uint32_t idx = 0; idx < 16; idx++)
             myHash[idx] += tmpHash[idx];
     }
@@ -121,27 +129,28 @@ void GenerateHash(const eh_HashState& base_state, eh_index g, unsigned char* has
         printf("b2b[%03d] = 0x", g);
         for (size_t b = 0; b < 64; b++)
             printf("%02x", ((uint8_t*)myHash)[b]);
-        printf("\n");
+        printf("; final \n");
     }
 
     memcpy(hash, &myHash[0], hLen);
 
-    if (g < 32)
-    {
-    	printf("hsh[%03d] = 0x", g);
-        for (size_t b = 0; b < hLen; b++)
-            printf("%02x", hash[b]);
-        printf("\n");
-    }
+//    if (g < 32)
+//    {
+//    	printf("hsh[%03d] = 0x", g);
+//        for (size_t b = 0; b < hLen; b++)
+//            printf("%02x", hash[b]);
+//        printf("\n");
+//    }
 
     ZeroizeUnusedBits(N, R, hash, hLen, g);
 
     if (g < 32)
     {
-    	printf("hsh[%03d] = 0x", g);
+    	printf("b2b[%03d] = 0x", g);
         for (size_t b = 0; b < hLen; b++)
             printf("%02x", hash[b]);
         printf("\n");
+        //printf("(3 str * 19bytes = 57bytes)\n");
     }
 }
 
@@ -493,6 +502,7 @@ bool EquihashR<N,K,R>::OptimisedSolve(const eh_HashState& base_state, const std:
 
     // First run the algorithm with truncated indices
 
+    printf("init_size = %u\n", init_size);
     printf("HashLength = %lu\n", HashLength);
     printf("CollisionBitLength = %lu\n", CollisionBitLength);
     printf("IndicesPerHashOutput = %lu\n", IndicesPerHashOutput);
