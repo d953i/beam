@@ -16,6 +16,8 @@
 #ifndef EQUIHASHR_H
 #define EQUIHASHR_H
 
+//#define ENABLE_MINING
+
 #if defined(__ANDROID__) || !defined(BEAM_USE_AVX)
 #include "blake/ref/blake2.h"
 #else
@@ -34,20 +36,14 @@ typedef blake2b_state eh_HashState;
 typedef uint32_t eh_index;
 typedef uint8_t eh_trunc;
 
-void ExpandArray(const unsigned char* in, size_t in_len,
-                 unsigned char* out, size_t out_len,
-                 size_t bit_len, size_t byte_pad=0);
-void CompressArray(const unsigned char* in, size_t in_len,
-                   unsigned char* out, size_t out_len,
-                   size_t bit_len, size_t byte_pad=0);
+void ExpandArray(const unsigned char* in, size_t in_len, unsigned char* out, size_t out_len, size_t bit_len, size_t byte_pad=0);
+void CompressArray(const unsigned char* in, size_t in_len, unsigned char* out, size_t out_len, size_t bit_len, size_t byte_pad=0);
 
 eh_index ArrayToEhIndex(const unsigned char* array);
 eh_trunc TruncateIndex(const eh_index i, const unsigned int ilen);
 
-std::vector<eh_index> GetIndicesFromMinimal(std::vector<unsigned char> minimal,
-                                            size_t cBitLen);
-std::vector<unsigned char> GetMinimalFromIndices(std::vector<eh_index> indices,
-                                                 size_t cBitLen);
+std::vector<eh_index> GetIndicesFromMinimal(std::vector<unsigned char> minimal, size_t cBitLen);
+std::vector<unsigned char> GetMinimalFromIndices(std::vector<eh_index> indices, size_t cBitLen);
 
 template<size_t WIDTH>
 class StepRow
@@ -164,7 +160,8 @@ class EhSolverCancelledException : public std::exception
 
 inline constexpr const size_t max(const size_t A, const size_t B) { return A > B ? A : B; }
 
-inline constexpr size_t beamhash_solution_size(unsigned int N, unsigned int K) {
+inline constexpr size_t beamhash_solution_size(unsigned int N, unsigned int K)
+{
     return (1 << K)*(N/(K+1)+1)/8;
 }
 
@@ -172,8 +169,6 @@ constexpr uint8_t GetSizeInBytes(size_t N)
 {
     return static_cast<uint8_t>((N + 7) / 8);
 }
-
-
 
 template<size_t WIDTH>
 bool DistinctIndices(const FullStepRow<WIDTH>& a, const FullStepRow<WIDTH>& b, size_t len, size_t lenIndices)
@@ -255,11 +250,11 @@ public:
 
     int InitialiseState(eh_HashState& base_state);
     bool IsValidSolution(const eh_HashState& base_state, std::vector<unsigned char> soln);
-#ifdef ENABLE_MINING
+//#ifdef ENABLE_MINING
     bool OptimisedSolve(const eh_HashState& base_state,
                         const std::function<bool(const std::vector<unsigned char>&)> validBlock,
                         const std::function<bool(EhSolverCancelCheck)> cancelled);
-#endif
+//#endif
 };
 
 static EquihashR<150,5,0> BeamHashI;
