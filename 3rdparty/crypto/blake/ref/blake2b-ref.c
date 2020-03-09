@@ -247,11 +247,13 @@ int blake2b_update( blake2b_state *S, const void *pin, size_t inlen )
 
 int blake2b_final( blake2b_state *S, void *out, size_t outlen )
 {
-  uint8_t buffer[BLAKE2B_OUTBYTES] = {0};
-  size_t i;
+	//uint8_t buffer[BLAKE2B_OUTBYTES] = {0};
+    uint8_t buffer[64] = {0};
+    size_t i;
 
-  if( out == NULL || outlen < S->outlen )
-    return -1;
+    //if( out == NULL || outlen < S->outlen )
+    if( out == NULL)
+    	return -1;
 
   if( blake2b_is_lastblock( S ) )
     return -1;
@@ -264,7 +266,8 @@ int blake2b_final( blake2b_state *S, void *out, size_t outlen )
   for( i = 0; i < 8; ++i ) /* Output full hash to temp buffer */
     store64( buffer + sizeof( S->h[i] ) * i, S->h[i] );
 
-  memcpy( out, buffer, S->outlen );
+  //memcpy( out, buffer, S->outlen );
+  memcpy( out, buffer, outlen );
   secure_zero_memory(buffer, sizeof(buffer));
   return 0;
 }
