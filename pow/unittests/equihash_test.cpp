@@ -18,6 +18,8 @@
 #include "wallet/unittests/test_helpers.h"
 #include <algorithm>
 
+//#define ENABLE_MINING
+
 WALLET_TEST_INIT
 using namespace std;
 
@@ -91,29 +93,35 @@ void TestArrayExpanding()
 
 int main()
 {
-    TestArrayExpanding();
+	//TestArrayExpanding();
     
+    //printf("Hello world! \n");
+
     // commented since it doesn't complete in 10 minutes and failes auto tests
-/*
     {
-        cout << "Test PoW...\n";
-        uint8_t pInput[] = { 1, 2, 3, 4, 56 };
+        cout << "Test begin...\n";
+        //uint8_t pInput[] = { 1, 2, 3, 4, 56 };
+
+        uint8_t pInput[] = {0xf7, 0xa7, 0xb3, 0xb4, 0x46, 0x8c, 0x67, 0xd1, 0xe1, 0xdb, 0x51, 0xc5, 0xdf, 0xcf, 0xfd, 0xca, 0x9f, 0x0f, 0xd3, 0xe5, 0x38, 0x3b, 0x23, 0x25, 0xef, 0x9d, 0xf0, 0x33, 0xd3, 0xb7, 0xe8, 0x82};
 
         beam::Block::PoW pow;
-        pow.m_Difficulty = 0; // d=0, runtime ~48 sec. d=1,2 - almost close to this. d=4 - runtime 4 miuntes, several cycles until solution is achieved.
-        pow.m_Nonce = 0x010204U;
+        pow.m_Difficulty = 0; // d=0, runtime ~48 sec. d=1,2 - almost close to this. d=4 - runtime 4 minutes, several cycles until solution is achieved.
+        pow.m_Nonce = { 0x1c, 0x99, 0x0a, 0x0d, 0x02, 0x45, 0x1f, 0xd7 };
+        //pow.m_Nonce = 0x010204U;
 
-        {
-            pow.Solve(pInput, sizeof(pInput));
 
-            WALLET_CHECK(pow.IsValid(pInput, sizeof(pInput)));
-        }
+		const beam::Block::PoW::Cancel fnCancel = [](bool) { return false; };
 
-        //#endif
+		cout << "Before Solve()...\n";
+		pow.Solve(pInput, sizeof(pInput), 326949, fnCancel);
+		cout << "After Solve()...\n";
+
+//		WALLET_CHECK(pow.IsValid(pInput, sizeof(pInput)));
 
         std::cout << "Solution is correct\n";
     }
-*/
+
     assert(g_failureCount == 0);
     return WALLET_CHECK_RESULT;
 }
+
