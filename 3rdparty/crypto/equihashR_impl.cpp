@@ -22,30 +22,53 @@
 #include <stdexcept>
 #include <boost/optional.hpp>
 
+//#define ENABLE_MINING
+
 EhSolverCancelledException solver_cancelled;
 
 namespace
 {
-    constexpr void ZeroizeUnusedBits(size_t N, size_t R, unsigned char* hash, size_t hLen)
+    constexpr void ZeroizeUnusedBits(size_t N, size_t R, unsigned char* hash, size_t hLen, size_t g)
     {
         uint8_t rem = N % 8;
-	const size_t step = GetSizeInBytes(N);
+        const size_t step = GetSizeInBytes(N);
 
         if (rem)
         {
+            if (g < 32)
+            	printf("rem\n");
+
             // clear lowest 8-rem bits
             for (size_t i = step - 1; i < hLen; i += step) {
                 uint8_t b = 0xff << (8-rem);
+
+                if (g < 32)
+                	printf("hash[%02lu] = 0x%02x & 0x%02x", i, hash[i], b);
+
                 hash[i] &= b;
+
+                if (g < 32)
+                	printf(" = 0x%02x\n", hash[i]);
             }
         }
 
-	if (R) {
+        if (R) {
+
+            if (g < 32)
+            	printf("R\n");
+
             for (size_t i = 0; i < hLen; i += step) {
                 uint8_t b = 0xff >> (2*R);
+
+                if (g < 32)
+                	printf("hash[%02lu] = 0x%02x & 0x%02x", i, hash[i], b);
+
                 hash[i] &= b;
+
+                if (g < 32)
+                	printf(" = 0x%02x\n", hash[i]);
             }
-	}	
+        }
     }
 }
 
@@ -74,35 +97,55 @@ int EquihashR<N,K,R>::InitialiseState(eh_HashState& base_state)
     return blake2b_init_param(&base_state, &param);
 }
 
-void GenerateHash(const eh_HashState& base_state, eh_index g,
-                  unsigned char* hash, size_t hLen, size_t N, size_t R )
+void GenerateHash(const eh_HashState& base_state, eh_index g, unsigned char* hash, size_t hLen, size_t N, size_t R )
 {
-
-
     uint32_t myHash[16] = {0};
     uint32_t startIndex = g & 0xFFFFFFF0;
 
-    for (uint32_t g2 = startIndex; g2 <= g; g2++) {
-	    uint32_t tmpHash[16] = {0};
-	 
-	    eh_HashState state;	
-	    state = base_state;
-	    eh_index lei = htole32(g2);
-	    blake2b_update(&state, (const unsigned char*) &lei,
-		                              sizeof(eh_index));
-	    
-	    blake2b_final(&state, (unsigned char*)&tmpHash[0], static_cast<uint8_t>(hLen));
+    for (uint32_t g2 = startIndex; g2 <= g; g2++)
+    {
+        uint32_t tmpHash[16] = {0};
+        eh_HashState state;
+        state = base_state;
+        eh_index lei = htole32(g2);
+        blake2b_update(&state, (const unsigned char*) &lei, sizeof(eh_index));
+        //blake2b_final(&state, (unsigned char*)&tmpHash[0], static_cast<uint8_t>(hLen));
+        blake2b_final(&state, (unsigned char*)&tmpHash[0], static_cast<uint8_t>(64));
 
-	    for (uint32_t idx = 0; idx < 16; idx++) myHash[idx] += tmpHash[idx];
+        for (uint32_t idx = 0; idx < 16; idx++)
+            myHash[idx] += tmpHash[idx];
+    }
+
+    if (g < 32)
+    {
+        printf("b2b[%03d] = 0x", g);
+        for (size_t b = 0; b < 64; b++)
+            printf("%02x", ((uint8_t*)myHash)[b]);
+        printf("\n");
     }
 
     memcpy(hash, &myHash[0], hLen);
-    ZeroizeUnusedBits(N, R, hash, hLen);
+
+    if (g < 32)
+    {
+    	printf("hsh[%03d] = 0x", g);
+        for (size_t b = 0; b < hLen; b++)
+            printf("%02x", hash[b]);
+        printf("\n");
+    }
+
+    ZeroizeUnusedBits(N, R, hash, hLen, g);
+
+    if (g < 32)
+    {
+    	printf("hsh[%03d] = 0x", g);
+        for (size_t b = 0; b < hLen; b++)
+            printf("%02x", hash[b]);
+        printf("\n");
+    }
 }
 
-void ExpandArray(const unsigned char* in, size_t in_len,
-                 unsigned char* out, size_t out_len,
-                 size_t bit_len, size_t byte_pad)
+void ExpandArray(const unsigned char* in, size_t in_len, unsigned char* out, size_t out_len, size_t bit_len, size_t byte_pad)
 {
     assert(bit_len >= 8);
     assert(8*sizeof(uint32_t) >= bit_len);
@@ -118,18 +161,23 @@ void ExpandArray(const unsigned char* in, size_t in_len,
     uint32_t acc_value = 0;
 
     size_t j = 0;
-    for (size_t i = 0; i < in_len; i++) {
+    for (size_t i = 0; i < in_len; i++)
+    {
         acc_value = (acc_value << 8) | in[i];
         acc_bits += 8;
 
         // When we have bit_len or more bits in the accumulator, write the next
         // output element.
-        if (acc_bits >= bit_len) {
+        if (acc_bits >= bit_len)
+        {
             acc_bits -= bit_len;
-            for (size_t x = 0; x < byte_pad; x++) {
+            for (size_t x = 0; x < byte_pad; x++)
+            {
                 out[j+x] = 0;
             }
-            for (size_t x = byte_pad; x < out_width; x++) {
+
+            for (size_t x = byte_pad; x < out_width; x++)
+            {
                 out[j+x] = (
                     // Big-endian
                     acc_value >> (acc_bits+(8*(out_width-x-1)))
@@ -143,9 +191,7 @@ void ExpandArray(const unsigned char* in, size_t in_len,
     }
 }
 
-void CompressArray(const unsigned char* in, size_t in_len,
-                   unsigned char* out, size_t out_len,
-                   size_t bit_len, size_t byte_pad)
+void CompressArray(const unsigned char* in, size_t in_len, unsigned char* out, size_t out_len, size_t bit_len, size_t byte_pad)
 {
     assert(bit_len >= 8);
     assert(8*sizeof(uint32_t) >= bit_len);
@@ -161,23 +207,28 @@ void CompressArray(const unsigned char* in, size_t in_len,
     uint32_t acc_value = 0;
 
     size_t j = 0;
-    for (size_t i = 0; i < out_len; i++) {
+    for (size_t i = 0; i < out_len; i++)
+    {
         // When we have fewer than 8 bits left in the accumulator, read the next
         // input element.
-        if (acc_bits < 8) {
-            if (j < in_len) {
-            acc_value = acc_value << bit_len;
-            for (size_t x = byte_pad; x < in_width; x++) {
-                acc_value = acc_value | (
+        if (acc_bits < 8)
+        {
+            if (j < in_len)
+            {
+                acc_value = acc_value << bit_len;
+                for (size_t x = byte_pad; x < in_width; x++)
+                {
+                    acc_value = acc_value | (
                     (
                         // Apply bit_len_mask across byte boundaries
                             in[j + x] & ((bit_len_mask >> (8 * (in_width - x - 1))) & 0xFF)
-                        ) << (8 * (in_width - x - 1))); // Big-endian
+                    ) << (8 * (in_width - x - 1))); // Big-endian
+                }
+                j += in_width;
+                acc_bits += bit_len;
             }
-            j += in_width;
-            acc_bits += bit_len;
-        }
-            else {
+            else
+            {
                 acc_value <<= 8 - acc_bits;
                 acc_bits += 8 - acc_bits;;
             }
@@ -220,36 +271,37 @@ eh_index UntruncateIndex(const eh_trunc t, const eh_index r, const unsigned int 
     return (i << (ilen - 8)) | r;
 }
 
-std::vector<eh_index> GetIndicesFromMinimal(std::vector<unsigned char> minimal,
-                                            size_t cBitLen)
+std::vector<eh_index> GetIndicesFromMinimal(std::vector<unsigned char> minimal, size_t cBitLen)
 {
     assert(((cBitLen+1)+7)/8 <= sizeof(eh_index));
     size_t lenIndices { 8*sizeof(eh_index)*minimal.size()/(cBitLen+1) };
     size_t bytePad { sizeof(eh_index) - ((cBitLen+1)+7)/8 };
     std::vector<unsigned char> array(lenIndices);
-    ExpandArray(minimal.data(), minimal.size(),
-                array.data(), lenIndices, cBitLen+1, bytePad);
+    ExpandArray(minimal.data(), minimal.size(), array.data(), lenIndices, cBitLen+1, bytePad);
+
     std::vector<eh_index> ret;
-    for (size_t i = 0; i < lenIndices; i += sizeof(eh_index)) {
+    for (size_t i = 0; i < lenIndices; i += sizeof(eh_index))
+    {
         ret.push_back(ArrayToEhIndex(array.data()+i));
     }
     return ret;
 }
 
-std::vector<unsigned char> GetMinimalFromIndices(std::vector<eh_index> indices,
-                                                 size_t cBitLen)
+std::vector<unsigned char> GetMinimalFromIndices(std::vector<eh_index> indices, size_t cBitLen)
 {
     assert(((cBitLen+1)+7)/8 <= sizeof(eh_index));
     size_t lenIndices { indices.size()*sizeof(eh_index) };
     size_t minLen { (cBitLen+1)*lenIndices/(8*sizeof(eh_index)) };
     size_t bytePad { sizeof(eh_index) - ((cBitLen+1)+7)/8 };
     std::vector<unsigned char> array(lenIndices);
-    for (size_t i = 0; i < indices.size(); i++) {
+
+    for (size_t i = 0; i < indices.size(); i++)
+    {
         EhIndexToArray(indices[i], array.data()+(i*sizeof(eh_index)));
     }
+
     std::vector<unsigned char> ret(minLen);
-    CompressArray(array.data(), lenIndices,
-                  ret.data(), minLen, cBitLen+1, bytePad);
+    CompressArray(array.data(), lenIndices, ret.data(), minLen, cBitLen+1, bytePad);
     return ret;
 }
 
@@ -269,25 +321,27 @@ StepRow<WIDTH>::StepRow(const StepRow<W>& a)
 }
 
 template<size_t WIDTH>
-FullStepRow<WIDTH>::FullStepRow(const unsigned char* hashIn, size_t hInLen,
-                                size_t hLen, size_t cBitLen, eh_index i) :
-        StepRow<WIDTH> {hashIn, hInLen, hLen, cBitLen}
+FullStepRow<WIDTH>::FullStepRow(const unsigned char* hashIn, size_t hInLen, size_t hLen, size_t cBitLen, eh_index i) : StepRow<WIDTH> {hashIn, hInLen, hLen, cBitLen}
 {
     EhIndexToArray(i, hash+hLen);
 }
 
 template<size_t WIDTH> template<size_t W>
-FullStepRow<WIDTH>::FullStepRow(const FullStepRow<W>& a, const FullStepRow<W>& b, size_t len, size_t lenIndices, size_t trim) :
-        StepRow<WIDTH> {a}
+FullStepRow<WIDTH>::FullStepRow(const FullStepRow<W>& a, const FullStepRow<W>& b, size_t len, size_t lenIndices, size_t trim) : StepRow<WIDTH> {a}
 {
     assert(len+lenIndices <= W);
     assert(len-trim+(2*lenIndices) <= WIDTH);
+
     for (size_t i = trim; i < len; i++)
         hash[i-trim] = a.hash[i] ^ b.hash[i];
-    if (a.IndicesBefore(b, len, lenIndices)) {
+
+    if (a.IndicesBefore(b, len, lenIndices))
+    {
         std::copy(a.hash+len, a.hash+len+lenIndices, hash+len-trim);
         std::copy(b.hash+len, b.hash+len+lenIndices, hash+len-trim+lenIndices);
-    } else {
+    }
+    else
+    {
         std::copy(b.hash+len, b.hash+len+lenIndices, hash+len-trim);
         std::copy(a.hash+len, a.hash+len+lenIndices, hash+len-trim+lenIndices);
     }
@@ -304,7 +358,8 @@ template<size_t WIDTH>
 bool StepRow<WIDTH>::IsZero(size_t len)
 {
     // This doesn't need to be constant time.
-    for (size_t i = 0; i < len; i++) {
+    for (size_t i = 0; i < len; i++)
+    {
         if (hash[i] != 0)
             return false;
     }
@@ -312,8 +367,7 @@ bool StepRow<WIDTH>::IsZero(size_t len)
 }
 
 template<size_t WIDTH>
-std::vector<unsigned char> FullStepRow<WIDTH>::GetIndices(size_t len, size_t lenIndices,
-                                                          size_t cBitLen) const
+std::vector<unsigned char> FullStepRow<WIDTH>::GetIndices(size_t len, size_t lenIndices, size_t cBitLen) const
 {
     assert(((cBitLen+1)+7)/8 <= sizeof(eh_index));
     size_t minLen { (cBitLen+1)*lenIndices/(8*sizeof(eh_index)) };
@@ -335,26 +389,27 @@ bool HasCollision(StepRow<WIDTH>& a, StepRow<WIDTH>& b, size_t l)
 }
 
 template<size_t WIDTH>
-TruncatedStepRow<WIDTH>::TruncatedStepRow(const unsigned char* hashIn, size_t hInLen,
-                                          size_t hLen, size_t cBitLen,
-                                          eh_index i, unsigned int ilen) :
-        StepRow<WIDTH> {hashIn, hInLen, hLen, cBitLen}
+TruncatedStepRow<WIDTH>::TruncatedStepRow(const unsigned char* hashIn, size_t hInLen, size_t hLen, size_t cBitLen, eh_index i, unsigned int ilen) : StepRow<WIDTH> {hashIn, hInLen, hLen, cBitLen}
 {
     hash[hLen] = TruncateIndex(i, ilen);
 }
 
 template<size_t WIDTH> template<size_t W>
-TruncatedStepRow<WIDTH>::TruncatedStepRow(const TruncatedStepRow<W>& a, const TruncatedStepRow<W>& b, size_t len, size_t lenIndices, int trim) :
-        StepRow<WIDTH> {a}
+TruncatedStepRow<WIDTH>::TruncatedStepRow(const TruncatedStepRow<W>& a, const TruncatedStepRow<W>& b, size_t len, size_t lenIndices, int trim) : StepRow<WIDTH> {a}
 {
     assert(len+lenIndices <= W);
     assert(len-trim+(2*lenIndices) <= WIDTH);
+
     for (size_t i = static_cast<size_t>(trim); i < len; i++)
         hash[i-trim] = a.hash[i] ^ b.hash[i];
-    if (a.IndicesBefore(b, len, lenIndices)) {
+
+    if (a.IndicesBefore(b, len, lenIndices))
+    {
         std::copy(a.hash+len, a.hash+len+lenIndices, hash+len-trim);
         std::copy(b.hash+len, b.hash+len+lenIndices, hash+len-trim+lenIndices);
-    } else {
+    }
+    else
+    {
         std::copy(b.hash+len, b.hash+len+lenIndices, hash+len-trim);
         std::copy(a.hash+len, a.hash+len+lenIndices, hash+len-trim+lenIndices);
     }
@@ -375,8 +430,7 @@ std::shared_ptr<eh_trunc> TruncatedStepRow<WIDTH>::GetTruncatedIndices(size_t le
     return p;
 }
 
-#ifdef ENABLE_MINING
-
+//#ifdef ENABLE_MINING
 
 template<size_t WIDTH>
 void CollideBranches(std::vector<FullStepRow<WIDTH>>& X, const size_t hlen, const size_t lenIndices, const unsigned int clen, const unsigned int ilen, const eh_trunc lt, const eh_trunc rt)
@@ -432,34 +486,63 @@ void CollideBranches(std::vector<FullStepRow<WIDTH>>& X, const size_t hlen, cons
 }
 
 template<unsigned int N, unsigned int K, unsigned int R>
-bool EquihashR<N,K,R>::OptimisedSolve(const eh_HashState& base_state,
-                                   const std::function<bool(const std::vector<unsigned char>&)> validBlock,
-                                   const std::function<bool(EhSolverCancelCheck)> cancelled)
+bool EquihashR<N,K,R>::OptimisedSolve(const eh_HashState& base_state, const std::function<bool(const std::vector<unsigned char>&)> validBlock, const std::function<bool(EhSolverCancelCheck)> cancelled)
 {
     eh_index init_size { 1U << (CollisionBitLength + 1 - R) };
     eh_index recreate_size { UntruncateIndex(1, 0, CollisionBitLength + 1) };
 
     // First run the algorithm with truncated indices
 
+    printf("HashLength = %lu\n", HashLength);
+    printf("CollisionBitLength = %lu\n", CollisionBitLength);
+    printf("IndicesPerHashOutput = %lu\n", IndicesPerHashOutput);
+    printf("N = %d\n", N);
+    printf("R = %d\n", R);
+
+    uint8_t rem = N % 8;
+    const size_t step = GetSizeInBytes(N);
+    printf("rem = %d\n", rem);
+    printf("step = %lu\n", step);
+
+    uint8_t b_rem = 0xff << (8-rem);
+    uint8_t b_R = 0xff >> (2*R);
+
+    printf("b_rem = 0x%02x\n", b_rem);
+    printf("b_R   = 0x%02x\n", b_R);
+
+
     const eh_index soln_size { 1 << K };
     std::vector<std::shared_ptr<eh_trunc>> partialSolns;
     int invalidCount = 0;
     {
-
         // 1) Generate first list
         size_t hashLen = HashLength;
         size_t lenIndices = sizeof(eh_trunc);
         std::vector<TruncatedStepRow<TruncatedWidth>> Xt;
         Xt.reserve(init_size);
         unsigned char tmpHash[HashOutput];
-        for (eh_index g = 0; Xt.size() < init_size; g++) {
+        for (eh_index g = 0; Xt.size() < init_size; g++)
+        {
             GenerateHash(base_state, g, tmpHash, HashOutput, N, R);
-            for (eh_index i = 0; i < IndicesPerHashOutput && Xt.size() < init_size; i++) {
-                Xt.emplace_back(tmpHash+(i*GetSizeInBytes(N)), GetSizeInBytes(N), HashLength, CollisionBitLength,
-                    static_cast<eh_index>(g*IndicesPerHashOutput)+i, static_cast<unsigned int>(CollisionBitLength + 1));
+
+            for (eh_index i = 0; i < IndicesPerHashOutput && Xt.size() < init_size; i++)
+            {
+                Xt.emplace_back(tmpHash+(i*GetSizeInBytes(N)), GetSizeInBytes(N), HashLength, CollisionBitLength, static_cast<eh_index>(g*IndicesPerHashOutput)+i, static_cast<unsigned int>(CollisionBitLength + 1));
+
+                if (g < 32)
+                {
+                    printf("str[%d] = 0x", g * 3 + i);
+                    for (size_t b = 0; b < GetSizeInBytes(N); b++)
+						printf("%02x", (tmpHash+(i*GetSizeInBytes(N)))[b]);
+					printf("\n");
+				}
             }
-            if (cancelled(ListGeneration)) throw solver_cancelled;
+
+            if (cancelled(ListGeneration))
+                throw solver_cancelled;
         }
+
+        //return 0;
 
         // 3) Repeat step 2 until 2n/(k+1) bits remain
         for (unsigned int r = 1; r < K && Xt.size() > 0; r++) {
@@ -483,12 +566,9 @@ bool EquihashR<N,K,R>::OptimisedSolve(const eh_HashState& base_state,
                 for (size_t l = 0; l < j - 1; l++) {
                     for (size_t m = l + 1; m < j; m++) {
                         // We truncated, so don't check for distinct indices here
-                        TruncatedStepRow<TruncatedWidth> Xi {Xt[i+l], Xt[i+m],
-                                                             hashLen, lenIndices,
-                                                             CollisionByteLength};
-                        if (!(Xi.IsZero(hashLen-CollisionByteLength) &&
-                              IsProbablyDuplicate<soln_size>(Xi.GetTruncatedIndices(hashLen-CollisionByteLength, 2*lenIndices),
-                                                             2*lenIndices))) {
+                        TruncatedStepRow<TruncatedWidth> Xi {Xt[i+l], Xt[i+m], hashLen, lenIndices, CollisionByteLength};
+                        if (!(Xi.IsZero(hashLen-CollisionByteLength) && IsProbablyDuplicate<soln_size>(Xi.GetTruncatedIndices(hashLen-CollisionByteLength, 2*lenIndices), 2*lenIndices)))
+                        {
                             Xc.emplace_back(Xi);
                         }
                     }
@@ -556,7 +636,8 @@ bool EquihashR<N,K,R>::OptimisedSolve(const eh_HashState& base_state,
 
 
     // Now for each solution run the algorithm again to recreate the indices
-    for (std::shared_ptr<eh_trunc> partialSoln : partialSolns) {
+    for (std::shared_ptr<eh_trunc> partialSoln : partialSolns)
+    {
         std::set<std::vector<unsigned char>> solns;
         size_t hashLen;
         size_t lenIndices;
@@ -565,19 +646,21 @@ bool EquihashR<N,K,R>::OptimisedSolve(const eh_HashState& base_state,
         X.reserve(K+1);
 
         // 3) Repeat steps 1 and 2 for each partial index
-        for (eh_index i = 0; i < soln_size; i++) {
+        for (eh_index i = 0; i < soln_size; i++)
+        {
             // 1) Generate first list of possibilities
             std::vector<FullStepRow<FinalFullWidth>> icv;
             icv.reserve(recreate_size);
             for (eh_index j = 0; j < recreate_size; j++) {
                 eh_index newIndex { UntruncateIndex(partialSoln.get()[i], j, CollisionBitLength + 1) };
-                if (j == 0 || newIndex % IndicesPerHashOutput == 0) {
-                    GenerateHash(base_state, newIndex/IndicesPerHashOutput,
-                                 tmpHash, HashOutput, N, R);
+                if (j == 0 || newIndex % IndicesPerHashOutput == 0)
+                {
+                    GenerateHash(base_state, newIndex/IndicesPerHashOutput, tmpHash, HashOutput, N, R);
                 }
-                icv.emplace_back(tmpHash+((newIndex % IndicesPerHashOutput) * GetSizeInBytes(N)),
-                                 GetSizeInBytes(N), HashLength, CollisionBitLength, newIndex);
-                if (cancelled(PartialGeneration)) throw solver_cancelled;
+                icv.emplace_back(tmpHash+((newIndex % IndicesPerHashOutput) * GetSizeInBytes(N)), GetSizeInBytes(N), HashLength, CollisionBitLength, newIndex);
+
+                if (cancelled(PartialGeneration))
+                    throw solver_cancelled;
             }
             boost::optional<std::vector<FullStepRow<FinalFullWidth>>> ic = icv;
 
@@ -585,20 +668,20 @@ bool EquihashR<N,K,R>::OptimisedSolve(const eh_HashState& base_state,
             hashLen = HashLength;
             lenIndices = sizeof(eh_index);
             size_t rti = i;
-            for (size_t r = 0; r <= K; r++) {
+            for (size_t r = 0; r <= K; r++)
+            {
                 // 2b) Until we are at the top of a subtree:
-                if (r < X.size()) {
-                    if (X[r]) {
+                if (r < X.size())
+                {
+                    if (X[r])
+                    {
                         // 2c) Merge the lists
                         ic->reserve(ic->size() + X[r]->size());
                         ic->insert(ic->end(), X[r]->begin(), X[r]->end());
                         std::sort(ic->begin(), ic->end(), CompareSR(hashLen));
                         if (cancelled(PartialSorting)) throw solver_cancelled;
                         size_t lti = rti-(static_cast<size_t>(1)<<r);
-                        CollideBranches(*ic, hashLen, lenIndices,
-                                        CollisionByteLength,
-                                        CollisionBitLength + 1,
-                                        partialSoln.get()[lti], partialSoln.get()[rti]);
+                        CollideBranches(*ic, hashLen, lenIndices, CollisionByteLength, CollisionBitLength + 1, partialSoln.get()[lti], partialSoln.get()[rti]);
 
                         // 2d) Check if this has become an invalid solution
                         if (ic->size() == 0)
@@ -608,7 +691,9 @@ bool EquihashR<N,K,R>::OptimisedSolve(const eh_HashState& base_state,
                         hashLen -= CollisionByteLength;
                         lenIndices *= 2;
                         rti = lti;
-                    } else {
+                    }
+                    else
+                    {
                         X[r] = *ic;
                         break;
                     }
@@ -641,7 +726,7 @@ invalidsolution:
 
     return false;
 }
-#endif // ENABLE_MINING
+//#endif // ENABLE_MINING
 
 template<unsigned int N, unsigned int K, unsigned int R>
 bool EquihashR<N,K,R>::IsValidSolution(const eh_HashState& base_state, std::vector<unsigned char> soln)
